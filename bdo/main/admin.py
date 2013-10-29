@@ -3,14 +3,35 @@ from django.contrib import admin
 from bdo.main import models
 
 
-class BDOMessageAdmin(admin.ModelAdmin):
+class MessageAdmin(admin.ModelAdmin):
+    list_display = (
+        'f_time',
+        'service_prov_id',
+        'invoke_id',
+        'content_tag',
+        'command_tag'
+    )
+    list_display_links = (
+        'f_time',
+        'service_prov_id',
+        'invoke_id',
+        'content_tag',
+        'command_tag'
+    )
     list_filter = [
-        'outbound',
+        'content_tag',
+        'service_prov_id'
     ]
+    list_per_page = 20
     search_fields = [
-        'description',
-        'message',
+        'invoke_id',
+        'command_tag',
+        'original',
     ]
+
+    def f_time(self, obj):
+        return obj.message_date_time.strftime("%x %X")
+    f_time.short_description = 'timestamp'
 
 
 class SubscriptionVersionAdmin(admin.ModelAdmin):
@@ -36,5 +57,5 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
     ]
 
 
-admin.site.register(models.BDOMessage, BDOMessageAdmin)
+admin.site.register(models.Message, MessageAdmin)
 admin.site.register(models.SubscriptionVersion, SubscriptionVersionAdmin)
