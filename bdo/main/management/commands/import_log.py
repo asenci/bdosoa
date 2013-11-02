@@ -2,11 +2,13 @@ import logging
 
 from django.core.management.base import BaseCommand
 from optparse import make_option
-from bdo.main import models
+
+from bdo.main import xml
+from bdo.main.models import Message
 
 
 class Command(BaseCommand):
-    help = 'Read XML log from MACP SPG'
+    help = 'Import XML log from MACP SPG'
 
     option_list = BaseCommand.option_list + (
         make_option('-d', '--debug', action='store_true', default=False,
@@ -31,13 +33,13 @@ class Command(BaseCommand):
         })
 
         # Logger instance
-        logger = logging.getLogger(options['name'])
+        self.logger = logging.getLogger(options['name'])
 
         # Process log files
         for path in args:
 
             # Initialize XML string
-            xml = ''
+            xml_str = ''
 
             # Read log file
             with open(path, 'r') as src:
@@ -47,32 +49,30 @@ class Command(BaseCommand):
                     if line.startswith('<<<') or line.startswith('>>>'):
 
                         # Process previous XML string if defined
-                        if xml:
-                            try:
-                                msg = models.Message.from_string(xml)
-                                msg.save()
-                                print(msg)
-
-                            except Exception as e:
-                                logger.error(e)
+                        if xml_str:
+                            self.proc_xml(xml_str)
 
                         # Start a new XML string
-                        xml = line.split(' ', 1)[1]
+                        xml_str = line.split(' ', 1)[1]
 
                     # String continuation
                     else:
 
                         # Append to the current string
-                        xml += line
+                        xml_str += line
 
                 # Finished processing the file
                 else:
 
                     # Process the last XML string
-                    try:
-                        msg = models.Message.from_string(xml)
-                        print(msg)
-                        #msg.save()
+                    self.proc_xml(xml_str)
 
-                    except Exception as e:
-                        logger.error(e)
+    def proc_xml(self, xml_str):
+        try:
+            xml_obj = xml.from_string(xml_str)
+            msg = Message.from_xml(xml_obj, xml_str)
+            msg.save()
+            self.logger.info(msg)
+
+        except Exception as e:
+            self.logger.error(e)

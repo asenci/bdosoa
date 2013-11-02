@@ -9,24 +9,27 @@ class MessageAdmin(admin.ModelAdmin):
         'service_prov_id',
         'invoke_id',
         'content_tag',
-        'command_tag'
+        'command_tag',
+        'processed',
     )
     list_display_links = (
         'f_time',
         'service_prov_id',
         'invoke_id',
         'content_tag',
-        'command_tag'
+        'command_tag',
     )
     list_filter = [
         'content_tag',
-        'service_prov_id'
+        'command_tag',
+        'service_prov_id',
+        'processed',
     ]
     list_per_page = 20
     search_fields = [
         'invoke_id',
         'command_tag',
-        'original',
+        'xml',
     ]
 
     def f_time(self, obj):
