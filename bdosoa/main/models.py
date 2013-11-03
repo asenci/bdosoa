@@ -2,7 +2,7 @@ from django.db import models
 from django.utils import timezone
 from threading import Thread
 
-from bdo.main import xml
+from bdosoa.main import xml
 
 
 def process_message(xml_str):
@@ -81,7 +81,7 @@ class Message(models.Model):
     def from_string(xml_str):
         """Create instance from XML string"""
 
-        from bdo.main import xml
+        from bdosoa.main import xml
 
         xml_obj = xml.from_string(xml_str)
 

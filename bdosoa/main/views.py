@@ -8,7 +8,7 @@ from spyne.protocol.soap import Soap11
 from spyne.application import Application
 from spyne.decorator import srpc
 
-from bdo.main.models import Message
+from bdosoa.main.models import Message
 
 import logging
 

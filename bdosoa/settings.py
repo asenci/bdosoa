@@ -28,7 +28,7 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.sessions',
     'django.contrib.staticfiles',
-    'bdo.main',
+    'bdosoa.main',
 )
 
 LANGUAGE_CODE = 'pt-br'
@@ -37,7 +37,7 @@ MEDIA_ROOT = os.path.join(RUNDIR, 'media')
 
 MEDIA_URL = '/media/'
 
-ROOT_URLCONF = 'bdo.main.urls'
+ROOT_URLCONF = 'bdosoa.main.urls'
 
 SECRET_KEY = ';UgDHSv1xUpZPOoSTVTwR#8zG_5)]uMS2cXMcpM-rhTox&4r6-gyuVj71HsYn0zJ'
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from bdo.main import models
+from bdosoa.main import models
 
 
 class MessageAdmin(admin.ModelAdmin):

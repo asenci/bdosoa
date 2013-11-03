@@ -3,8 +3,8 @@ import logging
 from django.core.management.base import BaseCommand
 from optparse import make_option
 
-from bdo.main import xml
-from bdo.main.models import Message
+from bdosoa.main import xml
+from bdosoa.main.models import Message
 
 
 class Command(BaseCommand):
@@ -15,7 +15,7 @@ class Command(BaseCommand):
                     help='increase logging verbosity'),
         make_option('-q', '--quiet', action='store_true', default=False,
                     help='reduce the logging verbosity'),
-        make_option('-n', '--name', default='bdo-read_log',
+        make_option('-n', '--name', default='bdosoa-read_log',
                     help='name used for logging'),
     )
 
