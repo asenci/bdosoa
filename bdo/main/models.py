@@ -1,4 +1,58 @@
 from django.db import models
+from django.utils import timezone
+from threading import Thread
+
+from bdo.main import xml
+
+
+def process_message(xml_str):
+    """Process BDR messages"""
+
+    # XML object
+    xml_obj = xml.from_string(xml_str)
+
+    # Message content
+    [content] = xml_obj.messageContent.getchildren()
+    [command] = content.getchildren()
+
+    # SVCreateDownload
+    if command.tag == xml.LNP_NS + 'SVCreateDownload':
+
+        # SV parameters
+        params = {
+            k: str(v)
+            for k, v in command.subscription_data.__dict__.iteritems()
+        }
+        params.update({
+            'subscription_version_id':
+            command.subscription_tn_version_id.version_id.text,
+            'subscription_version_tn':
+            command.subscription_tn_version_id.tn.text,
+        })
+
+        # Create or update SV
+        SubscriptionVersion(**params).save()
+
+    # SVDeleteDownload
+    elif command.tag == xml.LNP_NS + 'SVDeleteDownload':
+
+        # SV parameters
+        params = command.subscription_delete_data.__dict__.copy()
+        params['subscription_deletion_timestamp'] = timezone.now()
+
+        # Update SV
+        SubscriptionVersion.objects.filter(
+            subscription_version_id=command.subscription_version_id.text
+        ).update(**params)
+
+    # QueryBdoSVs
+    elif command.tag == xml.LNP_NS + 'QueryBdoSVs':
+        pass
+
+
+def reply_download(sv):
+    """Reply SV Downloads"""
+    pass
 
 
 class Message(models.Model):
@@ -15,7 +69,6 @@ class Message(models.Model):
     ])
     command_tag = models.CharField(max_length=255)
     xml = models.TextField()
-    processed = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-message_date_time']
@@ -45,6 +98,13 @@ class Message(models.Model):
             xml=xml_str,
         )
 
+    def save(self, *args, **kwargs):
+        super(Message, self).save(*args, **kwargs)
+
+        t = Thread(target=process_message, args=[self.xml])
+        t.daemon = True
+        t.start()
+
 
 class SubscriptionVersion(models.Model):
     """Versao de Subscricao (Bilhete de portabilidade)"""
@@ -59,8 +119,8 @@ class SubscriptionVersion(models.Model):
     subscription_rn1 = models.CharField(max_length=5)
     subscription_new_cnl = models.CharField(max_length=5)
     subscription_lnp_type = models.CharField(max_length=4, choices=[
-        ('lspp', 'Intrinseca'),
-        ('lisp', 'Inter-Operadora'),
+        ('lspp', 'Inter-Operadora'),
+        ('lisp', 'Intrinseca'),
     ])
     subscription_download_reason = models.CharField(max_length=8, choices=[
         ('new', 'Novo'),
@@ -73,16 +133,16 @@ class SubscriptionVersion(models.Model):
         ('CNG', 'CNG'),
     ])
     subscription_optional_data = models.TextField(blank=True)
-    active = models.BooleanField(default=True, db_index=True)
-    deletion_timestamp = models.DateTimeField(blank=True, null=True)
+    subscription_deletion_timestamp = models.DateTimeField(blank=True,
+                                                           null=True)
 
     class Meta:
         index_together = [
-            ['subscription_version_tn', 'active'],
+            ['subscription_version_tn', 'subscription_download_reason'],
             [
                 'subscription_version_tn',
                 'subscription_activation_timestamp',
-                'deletion_timestamp'
+                'subscription_deletion_timestamp'
             ],
         ]
         ordering = [
@@ -91,10 +151,7 @@ class SubscriptionVersion(models.Model):
         ]
 
     def __unicode__(self):
-        if self.active:
-            return '[+]{subscription_version_tn}'.format(**self.__dict__)
-        else:
-            return '[-]{subscription_version_tn}'.format(**self.__dict__)
+        return self.subscription_version_id
 
     @staticmethod
     def from_string(xml_str):

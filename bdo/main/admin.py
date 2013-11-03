@@ -10,7 +10,6 @@ class MessageAdmin(admin.ModelAdmin):
         'invoke_id',
         'content_tag',
         'command_tag',
-        'processed',
     )
     list_display_links = (
         'f_time',
@@ -23,7 +22,6 @@ class MessageAdmin(admin.ModelAdmin):
         'content_tag',
         'command_tag',
         'service_prov_id',
-        'processed',
     ]
     list_per_page = 20
     search_fields = [
@@ -39,19 +37,20 @@ class MessageAdmin(admin.ModelAdmin):
 
 class SubscriptionVersionAdmin(admin.ModelAdmin):
     list_display = (
-        'active',
         'subscription_version_tn',
+        'subscription_line_type',
         'subscription_download_reason',
         'subscription_rn1',
+        'subscription_lnp_type',
+
     )
     list_display_links = (
         'subscription_version_tn',
     )
     list_filter = [
-        'active',
-        'subscription_rn1',
         'subscription_download_reason',
         'subscription_line_type',
+        'subscription_rn1',
     ]
     list_per_page = 20
     search_fields = [

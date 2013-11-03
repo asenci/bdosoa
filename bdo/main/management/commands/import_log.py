@@ -69,10 +69,20 @@ class Command(BaseCommand):
 
     def proc_xml(self, xml_str):
         try:
-            xml_obj = xml.from_string(xml_str)
-            msg = Message.from_xml(xml_obj, xml_str)
-            msg.save()
-            self.logger.info(msg)
+            msg = Message.from_string(xml_str)
+
+            if msg.command_tag in [
+                'SVCreateDownload',
+                'SVDeleteDownload',
+                'DownloadReply',
+                'SVQueryRequest',
+                'SVQueryReply',
+                'QueryBdoSVs',
+                'QueryBdoSVsReply',
+                'BDRError',
+            ]:
+                msg.save()
+                self.logger.info(msg)
 
         except Exception as e:
             self.logger.error(e)
