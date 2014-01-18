@@ -3,8 +3,7 @@ import logging
 from django.core.management.base import BaseCommand
 from optparse import make_option
 
-from bdosoa.main import xml
-from bdosoa.main.models import Message
+from bdosoa.main.views import process_message
 
 
 class Command(BaseCommand):
@@ -69,20 +68,7 @@ class Command(BaseCommand):
 
     def proc_xml(self, xml_str):
         try:
-            msg = Message.from_string(xml_str)
-
-            if msg.command_tag in [
-                'SVCreateDownload',
-                'SVDeleteDownload',
-                'DownloadReply',
-                'SVQueryRequest',
-                'SVQueryReply',
-                'QueryBdoSVs',
-                'QueryBdoSVsReply',
-                'BDRError',
-            ]:
-                msg.save()
-                self.logger.info(msg)
+            process_message(xml_str)
 
         except Exception as e:
             self.logger.error(e)

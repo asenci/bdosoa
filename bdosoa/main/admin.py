@@ -8,18 +8,15 @@ class MessageAdmin(admin.ModelAdmin):
         'f_time',
         'service_prov_id',
         'invoke_id',
-        'content_tag',
         'command_tag',
     )
     list_display_links = (
         'f_time',
         'service_prov_id',
         'invoke_id',
-        'content_tag',
         'command_tag',
     )
     list_filter = [
-        'content_tag',
         'command_tag',
         'service_prov_id',
     ]
@@ -42,7 +39,6 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
         'subscription_download_reason',
         'subscription_rn1',
         'subscription_lnp_type',
-
     )
     list_display_links = (
         'subscription_version_tn',
