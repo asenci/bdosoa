@@ -1,38 +1,44 @@
 import logging
+import libspg
+import libspg.bdo
 
 from django.core.management.base import BaseCommand
-from optparse import make_option
+from django.utils.timezone import utc
 
-from bdosoa.main.views import process_message
+from bdosoa.main.models import Message
+
+
+def proc_xml(xml_str):
+    logger = logging.getLogger(__name__)
+
+    try:
+        message = libspg.Message.from_string(xml_str)
+
+        if isinstance(message, (libspg.bdo.SVCreateDownload,
+                                libspg.bdo.SVDeleteDownload)):
+            Message(
+                direction='BDRtoBDO',
+                status='received',
+                service_prov_id=message.service_prov_id,
+                invoke_id=message.invoke_id,
+                message_date_time=message.message_date_time.replace(
+                    tzinfo=utc),
+                command_tag=type(message).__name__,
+                xml=xml_str,
+            ).save()
+
+        else:
+            logger.info('Ignoring message type: {0}'.format(
+                type(message).__name__))
+
+    except Exception as e:
+        logger.exception(e)
 
 
 class Command(BaseCommand):
     help = 'Import XML log from MACP SPG'
 
-    option_list = BaseCommand.option_list + (
-        make_option('-d', '--debug', action='store_true', default=False,
-                    help='increase logging verbosity'),
-        make_option('-q', '--quiet', action='store_true', default=False,
-                    help='reduce the logging verbosity'),
-        make_option('-n', '--name', default='bdosoa-read_log',
-                    help='name used for logging'),
-    )
-
     def handle(self, *args, **options):
-
-        # Configure logging
-        log_format = \
-            '%(asctime)s <%(name)s:%(levelname)s> %(message)s'
-
-        logging.basicConfig(**{
-            'level': (logging.DEBUG if options['debug'] else
-                      logging.WARN if options['quiet'] else
-                      logging.INFO),
-            'format': log_format,
-        })
-
-        # Logger instance
-        self.logger = logging.getLogger(options['name'])
 
         # Process log files
         for path in args:
@@ -40,35 +46,45 @@ class Command(BaseCommand):
             # Initialize XML string
             xml_str = ''
 
+            # Do not ignore the following message
+            ignore = False
+
             # Read log file
             with open(path, 'r') as src:
                 for line in src:
 
-                    # New entry
-                    if line.startswith('<<<') or line.startswith('>>>'):
+                    # New received message
+                    if line.startswith('<<<'):
+
+                        # Do not ignore the following message
+                        ignore = False
 
                         # Process previous XML string if defined
                         if xml_str:
-                            self.proc_xml(xml_str)
+                            proc_xml(xml_str)
 
                         # Start a new XML string
-                        xml_str = line.split(' ', 1)[1]
+                        xml_str = line.split(' ', 1)[1].strip()
 
-                    # String continuation
+                    # New sent message
+                    elif line.startswith('>>>'):
+
+                        # Ignore the following message
+                        ignore = True
+
+                        # Process previous XML string if defined
+                        if xml_str:
+                            proc_xml(xml_str)
+
+                        xml_str = None
+
+                    # Message continuation
                     else:
-
-                        # Append to the current string
-                        xml_str += line
+                        if not ignore:
+                            # Append to the current string
+                            xml_str += line.strip()
 
                 # Finished processing the file
                 else:
-
                     # Process the last XML string
-                    self.proc_xml(xml_str)
-
-    def proc_xml(self, xml_str):
-        try:
-            process_message(xml_str)
-
-        except Exception as e:
-            self.logger.error(e)
+                    proc_xml(xml_str)

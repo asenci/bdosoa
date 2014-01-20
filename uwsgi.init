@@ -22,7 +22,7 @@ prog=$(basename "$uwsgi")
 UWSGI_CONF_DIR="/etc/uwsgi"
 UWSGI_LOG_DIR="/var/log/uwsgi"
 PIDFILE_DIR="/var/run/uwsgi"
-UWSGI_ARGS="--master --die-on-term"
+UWSGI_ARGS="--master"
 
 if [ -f /etc/sysconfig/uwsgi ]; then
     . /etc/sysconfig/uwsgi
@@ -45,6 +45,7 @@ each_action() {
                     ;;
                 force-reload|restart)
                     stop "$f"
+                    while (rh_status "$f" >/dev/null 2>&1); do sleep 1; done
                     start "$f"
                     ;;
                 reload)
@@ -137,7 +138,7 @@ stop() {
     pidfile=$(pidfile_for "$config_file")
 
     echo -n "Stopping uWSGI for ${instance}... "
-    killproc -p "$pidfile" "$prog"
+    killproc -p "$pidfile" "$prog" -INT
     retval=$?
     echo
     return $retval

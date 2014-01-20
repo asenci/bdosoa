@@ -1,25 +1,20 @@
 """Django settings module"""
-import os
+from os import environ, path
 
-
-RUNDIR = os.environ.get('DJANGO_HOME', '')
-
-ADMINS = MANAGERS = (
-    ('NOC', 'noc@enterchip.com.br')
-)
+DEBUG = TEMPLATE_DEBUG = environ.get('DJANGO_DEBUG', '0') == '1'
+PROJECT_ROOT = environ.get('DJANGO_HOME', '')
 
 ALLOWED_HOSTS = ['*']
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(RUNDIR, 'database', 'main.db'),
+        'NAME': path.join(PROJECT_ROOT, 'default.db'),
     },
 }
 
-DEBUG = TEMPLATE_DEBUG = os.environ.get('DJANGO_DEBUG', False)
-
-EMAIL_HOST = 'smtp.gtitelecom.net.br'
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_SUBJECT_PREFIX = '[bdosoa] '
 
 INSTALLED_APPS = (
     'django.contrib.admin',
@@ -33,7 +28,76 @@ INSTALLED_APPS = (
 
 LANGUAGE_CODE = 'pt-br'
 
-MEDIA_ROOT = os.path.join(RUNDIR, 'media')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+    },
+
+    'formatters': {
+        'default': {
+            'format': '%(asctime)s <%(name)s:%(levelname)s> %(message)s'
+        },
+        'debug': {
+            'format': '%(asctime)s <%(name)s:%(levelname)s>'
+                      ' [%(module)s:%(process)d:%(thread)d] %(message)s'
+        },
+    },
+
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'filters': ['require_debug_true'],
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+        },
+        'default': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'class': 'logging.FileHandler',
+            'formatter': 'debug' if DEBUG else 'default',
+            'filename': path.join(PROJECT_ROOT, 'bdosoa.log'),
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],
+            'class': 'django.utils.log.AdminEmailHandler',
+            'include_html': True,
+        },
+    },
+
+    'loggers': {
+        'bdosoa': {
+            'handlers': ['console', 'default'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+        },
+        'django': {
+            'handlers': ['console', 'default'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+        },
+        'django.request': {
+            'handlers': ['mail_admins'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+        'django.security': {
+            'handlers': ['mail_admins'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
+        'py.warnings': {
+            'handlers': ['console'],
+        },
+    },
+}
+
+MEDIA_ROOT = path.join(PROJECT_ROOT, 'media')
 
 MEDIA_URL = '/media/'
 
@@ -41,7 +105,7 @@ ROOT_URLCONF = 'bdosoa.main.urls'
 
 SECRET_KEY = ';UgDHSv1xUpZPOoSTVTwR#8zG_5)]uMS2cXMcpM-rhTox&4r6-gyuVj71HsYn0zJ'
 
-STATIC_ROOT = os.path.join(RUNDIR, 'static')
+STATIC_ROOT = path.join(PROJECT_ROOT, 'static')
 
 STATIC_URL = '/static/'
 

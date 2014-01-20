@@ -7,5 +7,6 @@ admin.autodiscover()
 urlpatterns = patterns('',
     url(r'^$', 'bdosoa.main.views.index'),
     url(r'^admin/', include(admin.site.urls)),
-    url(r'^SOAP/', 'bdosoa.main.views.soap_app')
+    url(r'^SOAP/$', 'bdosoa.main.views.soap'),
+    url(r'^SOAP/(?P<token>\w+)/$', 'bdosoa.main.views.soap'),
 )
