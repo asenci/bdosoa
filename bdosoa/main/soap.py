@@ -250,6 +250,7 @@ class SOAPApplication(object):
                 )
 
         except KeyError:
+            # noinspection PyUnboundLocalVariable
             logger.error(
                 'Requested method not implemented: {0}'.format(
                     call.tag))

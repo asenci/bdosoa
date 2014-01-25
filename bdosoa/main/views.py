@@ -43,6 +43,7 @@ def soap(request, token=''):
 # SOAP processing routines
 #
 
+# noinspection PyUnusedLocal
 def receive_message(header, message, spid):
     logger = logging.getLogger('{0}.receive_message'.format(__name__))
 
@@ -327,3 +328,4 @@ def process_query_bdo_svs(msg_obj):
         except Exception as e:
             logger.exception(e)
             raise e
+

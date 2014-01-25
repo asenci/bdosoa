@@ -2,19 +2,20 @@ from django.db import models
 
 
 def gen_token(size=32):
-    """Gerenate random tokens"""
+    """Generate random tokens"""
     import string
     from random import SystemRandom
 
     charlist = string.letters + string.digits
 
+    # noinspection PyUnusedLocal
     passwd = [SystemRandom().choice(charlist) for i in range(size)]
 
     return string.join(passwd, sep='')
 
 
 class Message(models.Model):
-    """Mensagens enviadas e recebidas"""
+    """Fila e log de Mensagens"""
 
     direction = models.CharField(max_length=8, choices=[
         ('BDOtoBDR', 'BDR<-BDO'),
@@ -115,6 +116,7 @@ from django.dispatch import receiver
 from bdosoa.main.views import process_message
 
 
+# noinspection PyUnusedLocal
 @receiver(post_save, sender=Message, dispatch_uid='message_post_save')
 def message_post_save(sender, **kwargs):
     message = kwargs.get('instance')

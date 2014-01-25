@@ -34,6 +34,7 @@ class MessageAdmin(admin.ModelAdmin):
         'error',
     ]
 
+    # noinspection PyMethodMayBeStatic
     def f_time(self, obj):
         return obj.message_date_time.strftime("%x %X")
     f_time.short_description = 'timestamp'

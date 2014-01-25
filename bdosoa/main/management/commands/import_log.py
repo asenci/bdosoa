@@ -8,7 +8,7 @@ from django.utils.timezone import utc
 from bdosoa.main.models import Message
 
 
-def proc_xml(xml_str):
+def process_xml(xml_str):
     logger = logging.getLogger(__name__)
 
     try:
@@ -61,7 +61,7 @@ class Command(BaseCommand):
 
                         # Process previous XML string if defined
                         if xml_str:
-                            proc_xml(xml_str)
+                            process_xml(xml_str)
 
                         # Start a new XML string
                         xml_str = line.split(' ', 1)[1].strip()
@@ -74,7 +74,7 @@ class Command(BaseCommand):
 
                         # Process previous XML string if defined
                         if xml_str:
-                            proc_xml(xml_str)
+                            process_xml(xml_str)
 
                         xml_str = None
 
@@ -87,4 +87,4 @@ class Command(BaseCommand):
                 # Finished processing the file
                 else:
                     # Process the last XML string
-                    proc_xml(xml_str)
+                    process_xml(xml_str)
