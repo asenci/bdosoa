@@ -5,6 +5,7 @@ import libspg.bdo
 from django.core.management.base import BaseCommand
 from django.utils.timezone import utc
 
+from bdosoa.main.messages import process_message
 from bdosoa.main.models import Message
 
 
@@ -16,16 +17,19 @@ def process_xml(xml_str):
 
         if isinstance(message, (libspg.bdo.SVCreateDownload,
                                 libspg.bdo.SVDeleteDownload)):
-            Message(
-                direction='BDRtoBDO',
-                status='received',
-                service_prov_id=message.service_prov_id,
-                invoke_id=message.invoke_id,
+
+            msg_log = Message.objects.create(
                 message_date_time=message.message_date_time.replace(
                     tzinfo=utc),
+                service_prov_id=message.service_prov_id,
+                invoke_id=message.invoke_id,
+                direction='BDRtoBDO',
                 command_tag=type(message).__name__,
-                xml=xml_str,
-            ).save()
+                status='processed',
+                message_body=xml_str,
+            )
+
+            process_message(msg_log, send_reply=False)
 
         else:
             logger.info('Ignoring message type: {0}'.format(

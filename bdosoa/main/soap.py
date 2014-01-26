@@ -1,9 +1,11 @@
 import logging
 import urllib2
 
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseNotAllowed
+from django.http.response import HttpResponseBase
 from lxml import etree
 from lxml.builder import ElementMaker
+from urlparse import urlsplit
 
 
 #
@@ -25,14 +27,8 @@ class ElementBase(etree.ElementBase):
         if isinstance(string, unicode):
             string = string.encode('utf-8')
 
-        # Parse the XML string and validate the document
-        try:
-            element = etree.fromstring(string, parser=XMLParser)
-        except Exception as e:
-            raise Exception('Error processing XML:\n{0}\n{1}\n'.format(
-                string, e))
-
-        return element
+        # Parse the XML string
+        return etree.fromstring(string, parser=XMLParser)
 
     @staticmethod
     def to_string(element):
@@ -194,10 +190,19 @@ XMLParserLookup.get_namespace('SPG/SoapServer')[None] = SPGSoapServer
 # HTTP
 #
 
-class HttpResponseSOAPFault(HttpResponse):
+class SOAPResponse(HttpResponse):
+    def __init__(self, soap_env):
+        if etree.iselement(soap_env):
+            soap_env = str(soap_env)
+
+        super(SOAPResponse, self).__init__(
+            soap_env, content_type='text/xml; charset=utf-8')
+
+
+class SOAPResponseFault(SOAPResponse):
     def __init__(self, faultcode, faultstring, faultactor=None, detail=None):
 
-        body = str(S.Envelope(
+        soap_env = S.Envelope(
             S.Body(
                 S.Fault(
                     E.faultcode(':'.join([SOAP_ENV_URI, faultcode])),
@@ -206,10 +211,9 @@ class HttpResponseSOAPFault(HttpResponse):
                     E.detail(detail) if detail is not None else '',
                 )
             )
-        ))
+        )
 
-        super(HttpResponseSOAPFault, self).__init__(
-            body, content_type='text/xml')
+        super(SOAPResponseFault, self).__init__(soap_env)
 
 
 #
@@ -232,43 +236,47 @@ class SOAPApplication(object):
         logger = logging.getLogger(
             '.'.join([__name__, self.__class__.__name__]))
 
+        # Only POST allowed (no WSDL info)
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
+
+        host = request.get_host()
+
         try:
-            logger.debug('Received SOAP envelop from: {0}\n{1}'.format(
-                request.get_host(), request.body))
+            logger.debug('Received SOAP envelop from "{0}": {1!r}'.format(
+                host, request.body))
 
             soap_env = ElementBase.from_string(request.body)
 
             soap_response = S.Envelope(S.Body())
 
             for call in soap_env.body:
-                method = self.__methods__.get(call.tag)
+                try:
+                    method = self.__methods__.get(call.tag)
 
-                result = method(*(arg.text for arg in call), **kwargs)
+                except KeyError:
+                    raise SOAPException(
+                        'Method not implemented: {0}'.format(call.tag))
+
+                result = method(
+                    *(arg.text for arg in call), _request=request, **kwargs)
+
+                if isinstance(result, HttpResponseBase):
+                    return result
 
                 soap_response.body.append(
                     E(call.tag + 'Response', E(call.tag + 'Result', result))
                 )
 
-        except KeyError:
-            # noinspection PyUnboundLocalVariable
-            logger.error(
-                'Requested method not implemented: {0}'.format(
-                    call.tag))
-
-            response = HttpResponseSOAPFault(
-                'Client', 'Method not implemented: {0}'.format(
-                    call.tag))
-
         except Exception as e:
             logger.exception(e)
-            response = HttpResponseSOAPFault('Client', str(e))
+            response = SOAPResponseFault('Client', str(e))
 
         else:
-            response = HttpResponse(str(soap_response),
-                                    content_type='text/xml')
+            response = SOAPResponse(soap_response)
 
-        logger.debug('Sending SOAP envelop to:{0}\n{1}'.format(
-            request.get_host(), response.content))
+        logger.debug('Sending SOAP envelop to "{0}": {1!r}'.format(
+            host, response.content))
 
         return response
 
@@ -293,6 +301,7 @@ class SOAPClient(object):
             logger = logging.getLogger(
                 '.'.join([__name__, self.__class__.__name__, method]))
 
+            # Build SOAP Envelope
             soap_env = S.Envelope(
                 S.Body(
                     E(QName(self.__namespace__, method), *[
@@ -302,9 +311,12 @@ class SOAPClient(object):
                 )
             )
 
+            host = urlsplit(self.__url__).netloc
+
             try:
-                logger.debug('Sending SOAP envelop to: {0}\n{1}'.format(
-                    self.__url__, soap_env))
+
+                logger.debug('Sending SOAP envelop to "{0}": {1!r}'.format(
+                    host, soap_env))
 
                 request = urllib2.urlopen(urllib2.Request(
                     self.__url__,
@@ -322,6 +334,15 @@ class SOAPClient(object):
                 response = e.read()
                 resp_code = e.code
 
+                try:
+                    ElementBase.from_string(response)
+
+                except Exception:
+                    raise e
+
+            logger.debug('Received SOAP envelop from "{0}": {1!r}'.format(
+                host, response))
+
             soap_reply = ElementBase.from_string(response)
 
             if resp_code != 200:
@@ -331,6 +352,8 @@ class SOAPClient(object):
                     raise SOAPException(soap_reply.body.fault_string)
 
                 else:
+                    logger.error('Invalid response from "{0}": {1!r}'.format(
+                        host, response))
                     raise SOAPException(response)
 
             method_response = soap_reply.body.find(

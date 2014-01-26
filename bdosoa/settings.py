@@ -6,6 +6,8 @@ PROJECT_ROOT = environ.get('DJANGO_HOME', '')
 
 ALLOWED_HOSTS = ['*']
 
+CONN_MAX_AGE = None
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

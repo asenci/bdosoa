@@ -6,38 +6,79 @@ from bdosoa.main import models
 class MessageAdmin(admin.ModelAdmin):
     list_display = (
         'f_time',
-        'direction',
         'service_prov_id',
         'invoke_id',
+        'direction',
         'command_tag',
         'status',
     )
     list_display_links = (
         'f_time',
-        'direction',
         'service_prov_id',
         'invoke_id',
+        'direction',
         'command_tag',
         'status',
     )
-    list_filter = [
+    list_filter = (
         'service_prov_id',
         'direction',
-        'status',
         'command_tag',
-    ]
+        'status',
+    )
     list_per_page = 20
-    search_fields = [
+    search_fields = (
         'invoke_id',
         'command_tag',
-        'xml',
-        'error',
-    ]
+        'message_body',
+        'error_info',
+    )
 
     # noinspection PyMethodMayBeStatic
     def f_time(self, obj):
-        return obj.message_date_time.strftime("%x %X")
+        return obj.message_date_time.strftime('%x %X%z')
     f_time.short_description = 'timestamp'
+
+
+class QueuedMessageAdmin(admin.ModelAdmin):
+    fields = (
+        'timestamp',
+        'message',
+        'f_time',
+        'service_prov_id',
+        'invoke_id',
+        'direction',
+        'command_tag',
+        'status',
+        'message_body',
+        'error_info',
+    )
+    list_display = (
+        'timestamp',
+        'message',
+        'f_time',
+        'service_prov_id',
+        'invoke_id',
+        'direction',
+        'command_tag',
+        'status',
+    )
+    list_per_page = 20
+    readonly_fields = (
+        'f_time',
+        'service_prov_id',
+        'invoke_id',
+        'direction',
+        'command_tag',
+        'status',
+        'message_body',
+        'error_info',
+    )
+
+    # noinspection PyMethodMayBeStatic
+    def f_time(self, obj):
+        return obj.message_date_time.strftime('%x %X%z')
+    f_time.short_description = 'message_date_time'
 
 
 class ServiceProviderAdmin(admin.ModelAdmin):
@@ -50,13 +91,13 @@ class ServiceProviderAdmin(admin.ModelAdmin):
         'service_prov_id',
         'spg_soap_url',
     )
-    list_filter = [
+    list_filter = (
         'enabled',
-    ]
-    search_fields = [
+    )
+    search_fields = (
         'service_prov_id',
         'spg_soap_url',
-    ]
+    )
 
 
 class SubscriptionVersionAdmin(admin.ModelAdmin):
@@ -71,19 +112,20 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
     list_display_links = (
         'subscription_version_tn',
     )
-    list_filter = [
+    list_filter = (
         'service_prov_id',
         'subscription_download_reason',
         'subscription_line_type',
         'subscription_rn1',
-    ]
+    )
     list_per_page = 20
-    search_fields = [
+    search_fields = (
         'subscription_version_id',
         'subscription_version_tn',
-    ]
+    )
 
 
-admin.site.register(models.ServiceProvider, ServiceProviderAdmin)
 admin.site.register(models.Message, MessageAdmin)
+admin.site.register(models.QueuedMessage, QueuedMessageAdmin)
+admin.site.register(models.ServiceProvider, ServiceProviderAdmin)
 admin.site.register(models.SubscriptionVersion, SubscriptionVersionAdmin)
