@@ -21,10 +21,10 @@ class Message(models.Model):
     service_prov_id = models.CharField(max_length=4)
     invoke_id = models.IntegerField()
     direction = models.CharField(max_length=8, choices=[
-        ('BDOtoBDR', 'BDR<-BDO'),
         ('BDRtoBDO', 'BDR->BDO'),
-        ('SOAtoBDR', 'BDR<-SOA'),
-        ('BDRtoSOA', 'BDR->SOA')])
+        ('BDOtoBDR', 'BDR<-BDO'),
+        ('BDRtoSOA', 'BDR->SOA'),
+        ('SOAtoBDR', 'BDR<-SOA')])
     command_tag = models.CharField(max_length=255)
     status = models.CharField(max_length=9, choices=[
         ('error', 'Error'),
@@ -152,14 +152,11 @@ from django.dispatch import receiver
 # noinspection PyUnusedLocal
 @receiver(post_save, sender=Message, dispatch_uid='message_post_save')
 def message_post_save(sender, **kwargs):
-    print 'message_post_save'
     instance = kwargs.get('instance')
-    print instance
 
     if instance.status in ['received', 'queued']:
-        print QueuedMessage.objects.create(message=instance)
+        QueuedMessage.objects.create(message=instance)
     else:
-        print 'deleted'
         QueuedMessage.objects.get(message=instance).delete()
 
 try:
@@ -179,5 +176,4 @@ else:
     # noinspection PyUnusedLocal
     @receiver(post_save, sender=QueuedMessage, dispatch_uid='queue_post_save')
     def queue_post_save(sender, **kwargs):
-        print 'queue_post_save'
         uwsgi.mule_msg('flush_queue')

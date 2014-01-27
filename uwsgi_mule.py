@@ -10,7 +10,7 @@ if __name__ == '__main__':
     try:
         while True:
             cmd = uwsgi.mule_get_msg()
-            logger.info('Received command: {0!r}'.format(cmd))
+            logger.debug('Received command: {0!r}'.format(cmd))
 
             if cmd == 'flush_queue':
                 QueuedMessage.flush()
