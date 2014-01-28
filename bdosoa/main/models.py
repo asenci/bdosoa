@@ -73,15 +73,25 @@ class QueuedMessage(models.Model):
             process_message(item.message)
 
 
-
 class ServiceProvider(models.Model):
     """Provedor de Servico"""
 
     service_prov_id = models.CharField(max_length=4, unique=True)
+    enabled = models.BooleanField(default=True)
     auth_token = models.CharField(max_length=32, unique=True,
                                   default=gen_token)
     spg_soap_url = models.CharField(max_length=255)
-    enabled = models.BooleanField(default=True)
+    db_name = models.CharField(max_length=255)
+    db_engine = models.CharField(
+        max_length=255, default='django.db.backends.sqlite3', choices=[
+            ('django.db.backends.mysql', 'MySQL'),
+            ('django.db.backends.oracle', 'Oracle'),
+            ('django.db.backends.postgresql_psycopg2', 'PostgreSQL'),
+            ('django.db.backends.sqlite3', 'SQLite')])
+    db_host = models.CharField(max_length=255, blank=True, null=True)
+    db_port = models.IntegerField(blank=True, null=True)
+    db_user = models.CharField(max_length=255, blank=True, null=True)
+    db_pass = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         index_together = [
@@ -97,7 +107,6 @@ class ServiceProvider(models.Model):
 class SubscriptionVersion(models.Model):
     """Versao de Subscricao (Bilhete de portabilidade)"""
 
-    service_prov_id = models.CharField(max_length=4, db_index=True)
     subscription_version_id = models.IntegerField(primary_key=True)
     subscription_version_tn = models.CharField(max_length=11, db_index=True)
     subscription_recipient_sp = models.CharField(max_length=4)
@@ -126,7 +135,6 @@ class SubscriptionVersion(models.Model):
     class Meta:
         index_together = [
             [
-                'service_prov_id',
                 'subscription_version_tn',
                 'subscription_activation_timestamp',
                 'subscription_deletion_timestamp'
@@ -148,6 +156,7 @@ class SubscriptionVersion(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
 
 # noinspection PyUnusedLocal
 @receiver(post_save, sender=Message, dispatch_uid='message_post_save')

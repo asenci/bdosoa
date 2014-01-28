@@ -102,7 +102,6 @@ class ServiceProviderAdmin(admin.ModelAdmin):
 
 class SubscriptionVersionAdmin(admin.ModelAdmin):
     list_display = (
-        'service_prov_id',
         'subscription_version_tn',
         'subscription_line_type',
         'subscription_download_reason',
@@ -113,7 +112,6 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
         'subscription_version_tn',
     )
     list_filter = (
-        'service_prov_id',
         'subscription_download_reason',
         'subscription_line_type',
         'subscription_rn1',

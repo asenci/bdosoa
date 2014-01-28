@@ -133,3 +133,32 @@ USE_I18N = True
 USE_L10N = True
 
 USE_TZ = True
+
+
+from django.db import connections
+
+db_con = connections['default']
+db_cur = db_con.cursor()
+query = '''SELECT
+             service_prov_id, db_name, db_engine, db_host,
+             db_port, db_user, db_pass
+           FROM main_serviceprovider'''
+db_query = db_cur.execute(query)
+
+for sp in db_query.fetchall():
+    sp_id, db_name, db_engine, db_host, db_port, db_user, db_pass = sp
+    db_alias = 'sp_' + sp_id
+
+    if db_engine == 'django.db.backends.sqlite3':
+        db_name = path.join(DJANGO_HOME, db_name)
+
+    connections.databases[db_alias] = {
+        'NAME': db_name,
+        'ENGINE': db_engine,
+        'HOST': db_host,
+        'PORT': db_port,
+        'USER': db_user,
+        'PASSWORD': db_pass,
+    }
+
+    connections.ensure_defaults(db_alias)
