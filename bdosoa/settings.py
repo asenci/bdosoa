@@ -1,22 +1,34 @@
 """Django settings module"""
 from os import environ, path
 
-DEBUG = TEMPLATE_DEBUG = environ.get('DJANGO_DEBUG', '0') == '1'
-PROJECT_ROOT = environ.get('DJANGO_HOME', '')
+DEBUG = TEMPLATE_DEBUG = environ.get('DJANGO_DEBUG', '1') == '1'
+DJANGO_HOME = environ.get('DJANGO_HOME', '')
 
-ALLOWED_HOSTS = ['*']
+ADMINS = (
+    ('NOC', 'noc@enterchip.com.br')
+)
 
-CONN_MAX_AGE = None
+ALLOWED_HOSTS = ['.gtitelecom.net.br']
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': path.join(PROJECT_ROOT, 'default.db'),
+        'NAME': path.join(DJANGO_HOME, 'default.db'),
+        'CONN_MAX_AGE': None,
     },
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = SERVER_EMAIL = 'webmaster@gtitelecom.net.br'
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' \
+    if DEBUG else 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_HOST = 'smtp.gtitelecom.net.br'
+#EMAIL_HOST_USER =
+#EMAIL_HOST_PASSWORD =
+#EMAIL_PORT = 587
 EMAIL_SUBJECT_PREFIX = '[bdosoa] '
+#EMAIL_USE_TLS = True
 
 INSTALLED_APPS = (
     'django.contrib.admin',
@@ -64,7 +76,7 @@ LOGGING = {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.FileHandler',
             'formatter': 'debug' if DEBUG else 'default',
-            'filename': path.join(PROJECT_ROOT, 'bdosoa.log'),
+            'filename': path.join(DJANGO_HOME, 'bdosoa.log'),
         },
         'mail_admins': {
             'level': 'ERROR',
@@ -99,15 +111,18 @@ LOGGING = {
     },
 }
 
-MEDIA_ROOT = path.join(PROJECT_ROOT, 'media')
+MEDIA_ROOT = path.join(DJANGO_HOME, 'media')
 
 MEDIA_URL = '/media/'
 
 ROOT_URLCONF = 'bdosoa.main.urls'
 
-SECRET_KEY = ';UgDHSv1xUpZPOoSTVTwR#8zG_5)]uMS2cXMcpM-rhTox&4r6-gyuVj71HsYn0zJ'
+SECRET_KEY = environ.get(
+    'DJANGO_SECRET',
+    ';UgDHSv1xUpZPOoSTVTwR#8zG_5)]uMS2cXMcpM-rhTox&4r6-gyuVj71HsYn0zJ'
+)
 
-STATIC_ROOT = path.join(PROJECT_ROOT, 'static')
+STATIC_ROOT = path.join(DJANGO_HOME, 'static')
 
 STATIC_URL = '/static/'
 

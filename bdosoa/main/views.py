@@ -1,8 +1,10 @@
+from django.db.models.signals import post_save
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 
 from bdosoa.main.messages import receive_soap
+from bdosoa.main.models import QueuedMessage
 from bdosoa.main.soap import SOAPApplication
 
 
@@ -36,15 +38,7 @@ def api(request):
             return HttpResponse('Command missing\n')
 
         if command == 'flush_queue':
-            try:
-                import uwsgi
-
-            except ImportError:
-                from bdosoa.main.models import QueuedMessage
-                QueuedMessage.flush()
-
-            else:
-                uwsgi.mule_msg('flush_queue')
+            post_save.send(QueuedMessage)
 
         return HttpResponse('OK\n')
 
