@@ -81,6 +81,18 @@ class QueuedMessageAdmin(admin.ModelAdmin):
     f_time.short_description = 'message_date_time'
 
 
+class QueuedSyncAdmin(admin.ModelAdmin):
+    list_display = (
+        'timestamp',
+        'subscription_version',
+        'status',
+    )
+    list_filter = (
+        'status',
+    )
+    list_per_page = 20
+
+
 class ServiceProviderAdmin(admin.ModelAdmin):
     list_display = (
         'service_prov_id',
@@ -102,6 +114,7 @@ class ServiceProviderAdmin(admin.ModelAdmin):
 
 class SubscriptionVersionAdmin(admin.ModelAdmin):
     list_display = (
+        'service_prov_id',
         'subscription_version_tn',
         'subscription_line_type',
         'subscription_download_reason',
@@ -112,6 +125,7 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
         'subscription_version_tn',
     )
     list_filter = (
+        'service_prov_id',
         'subscription_download_reason',
         'subscription_line_type',
         'subscription_rn1',
@@ -125,5 +139,6 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
 
 admin.site.register(models.Message, MessageAdmin)
 admin.site.register(models.QueuedMessage, QueuedMessageAdmin)
+admin.site.register(models.QueuedSync, QueuedSyncAdmin)
 admin.site.register(models.ServiceProvider, ServiceProviderAdmin)
 admin.site.register(models.SubscriptionVersion, SubscriptionVersionAdmin)

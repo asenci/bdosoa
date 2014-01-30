@@ -3,7 +3,10 @@ import libspg.bdo
 import logging
 
 from django.http import HttpResponseForbidden
-from django.utils.timezone import utc
+from django.utils.timezone import now, utc
+from urllib import urlencode
+from urllib2 import HTTPError, Request, urlopen
+from urlparse import urlsplit
 
 from bdosoa.main.models import Message, ServiceProvider
 from bdosoa.main.models import SubscriptionVersion
@@ -102,6 +105,71 @@ def send_soap(message):
 
 
 #
+# Database sync routines
+#
+
+def process_sync(queued_sync):
+    logger = logging.getLogger('{0}.process_sync'.format(__name__))
+
+    sv = queued_sync.subscription_version
+    sync_url = ServiceProvider.objects.get(
+        service_prov_id=sv.service_prov_id).sync_api_url
+
+    host = urlsplit(sync_url).netloc
+
+    post = urlencode({
+        'subscription_version_id':
+            sv.subscription_version_id,
+        'subscription_version_tn':
+            sv.subscription_version_tn,
+        'subscription_recipient_sp':
+            sv.subscription_recipient_sp,
+        'subscription_recipient_eot':
+            sv.subscription_recipient_eot,
+        'subscription_activation_timestamp':
+            sv.subscription_activation_timestamp,
+        'subscription_broadcast_timestamp':
+            sv.subscription_broadcast_timestamp,
+        'subscription_rn1':
+            sv.subscription_rn1,
+        'subscription_new_cnl':
+            sv.subscription_new_cnl,
+        'subscription_lnp_type':
+            sv.subscription_lnp_type,
+        'subscription_download_reason':
+            sv.subscription_download_reason,
+        'subscription_line_type':
+            sv.subscription_line_type,
+        'subscription_optional_data':
+            sv.subscription_optional_data,
+        'subscription_deletion_timestamp':
+            sv.subscription_deletion_timestamp,
+    })
+
+    logger.debug('Sending sync message to "{0}": {1!r}'.format(host, post))
+
+    try:
+        response = urlopen(Request(sync_url, post))
+
+        if response.code == '200':
+            logger.debug('Received reply from "{0}": {1}'.format(
+                host, response.msg))
+
+            queued_sync.delete()
+
+        else:
+            raise HTTPError(response.url, response.code, response.msg,
+                            response.headers, response.fp)
+
+    except HTTPError as e:
+        logger.exception(e)
+        queued_sync.status = 'error'
+        queued_sync.timestamp = now()
+        queued_sync.error_info += '{0}\n{1}\n\n'.format(str(e), e.read())
+        queued_sync.save()
+
+
+#
 # Messages processing routines
 #
 
@@ -122,8 +190,7 @@ def process_message(message, send_reply=True):
                     raise TypeError('Invalid message type: {0}'.format(
                         type(msg_obj).__name__))
 
-                db_alias = 'sp_' + message.service_prov_id
-                reply = handler(msg_obj, db_alias=db_alias)
+                reply = handler(msg_obj)
 
                 # Enqueue reply
                 if reply is not None and send_reply:
@@ -144,17 +211,11 @@ def process_message(message, send_reply=True):
                 logger.exception(e)
                 message.status = 'error'
                 message.error_info += str(e) + '\n\n'
-                message.save()
 
             else:
                 message.status = 'processed'
-                message.save()
 
-                # Save a SV local copy
-                try:
-                    handler(msg_obj, db_alias='default')
-                except Exception as e:
-                    logger.exception(e)
+            message.save()
 
         elif message.status == 'queued':
             send_soap(message)
@@ -167,7 +228,7 @@ def process_message(message, send_reply=True):
     logger.debug('Finished processing message: {0}'.format(message))
 
 
-def process_sv_create_download(msg_obj, db_alias):
+def process_sv_create_download(msg_obj):
     logger = logging.getLogger(
         '{0}.process_sv_create_download'.format(__name__))
 
@@ -204,7 +265,7 @@ def process_sv_create_download(msg_obj, db_alias):
     try:
 
         try:
-            sv = SubscriptionVersion.objects.using(db_alias).get(
+            sv = SubscriptionVersion.objects.get(
                 service_prov_id=msg_obj.service_prov_id,
                 subscription_version_id=tn_version_id.version_id)
 
@@ -214,7 +275,7 @@ def process_sv_create_download(msg_obj, db_alias):
             sv.save()
 
         except SubscriptionVersion.DoesNotExist:
-            SubscriptionVersion.objects.using(db_alias).create(
+            SubscriptionVersion.objects.create(
                 service_prov_id=msg_obj.service_prov_id,
                 subscription_version_id=tn_version_id.version_id,
                 **params)
@@ -227,7 +288,7 @@ def process_sv_create_download(msg_obj, db_alias):
         return msg_obj.reply()
 
 
-def process_sv_delete_download(msg_obj, db_alias):
+def process_sv_delete_download(msg_obj):
     logger = logging.getLogger(
         '{0}.process_sv_delete_download'.format(__name__))
 
@@ -235,7 +296,7 @@ def process_sv_delete_download(msg_obj, db_alias):
     data = msg_obj.message_content.subscription_delete_data
 
     try:
-        SubscriptionVersion.objects.using(db_alias).filter(
+        SubscriptionVersion.objects.filter(
             service_prov_id=msg_obj.service_prov_id,
             subscription_version_id=version_id,
         ).update(
@@ -252,7 +313,7 @@ def process_sv_delete_download(msg_obj, db_alias):
         return msg_obj.reply()
 
 
-def process_query_bdo_svs(msg_obj, db_alias):
+def process_query_bdo_svs(msg_obj):
     logger = logging.getLogger('{0}.process_query_bdo_svs'.format(__name__))
 
     if isinstance(msg_obj, libspg.bdo.QueryBdoSVs):
@@ -264,7 +325,7 @@ def process_query_bdo_svs(msg_obj, db_alias):
             sv_list = []
 
             if query:
-                sv_list = SubscriptionVersion.objects.using(db_alias).filter(
+                sv_list = SubscriptionVersion.objects.filter(
                     service_prov_id=msg_obj.service_prov_id,
                     subscription_deletion_timestamp__isnull=True,
                 ).extra(where=[query])

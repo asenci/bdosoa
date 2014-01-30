@@ -73,6 +73,34 @@ class QueuedMessage(models.Model):
             process_message(item.message)
 
 
+class QueuedSync(models.Model):
+    """Fila de sincronismo"""
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+    subscription_version = models.OneToOneField('SubscriptionVersion')
+    status = models.CharField(max_length=6, default='queued', choices=[
+        ('queued', 'Queued'),
+        ('error', 'Error'),
+    ])
+    error_info = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['timestamp']
+
+    def __unicode__(self):
+        return '[{0}] {1}: {2}'.format(
+            self.subscription_version.service_prov_id,
+            self.subscription_version.subscription_version_id,
+            self.status)
+
+    @classmethod
+    def flush(cls):
+        from bdosoa.main.messages import process_sync
+
+        for item in cls.objects.all():
+            process_sync(item)
+
+
 class ServiceProvider(models.Model):
     """Provedor de Servico"""
 
@@ -81,17 +109,7 @@ class ServiceProvider(models.Model):
     auth_token = models.CharField(max_length=32, unique=True,
                                   default=gen_token)
     spg_soap_url = models.CharField(max_length=255)
-    db_name = models.CharField(max_length=255)
-    db_engine = models.CharField(
-        max_length=255, default='django.db.backends.sqlite3', choices=[
-            ('django.db.backends.mysql', 'MySQL'),
-            ('django.db.backends.oracle', 'Oracle'),
-            ('django.db.backends.postgresql_psycopg2', 'PostgreSQL'),
-            ('django.db.backends.sqlite3', 'SQLite')])
-    db_host = models.CharField(max_length=255, blank=True, null=True)
-    db_port = models.IntegerField(blank=True, null=True)
-    db_user = models.CharField(max_length=255, blank=True, null=True)
-    db_pass = models.CharField(max_length=255, blank=True, null=True)
+    sync_api_url = models.CharField(max_length=255)
 
     class Meta:
         index_together = [
@@ -107,6 +125,7 @@ class ServiceProvider(models.Model):
 class SubscriptionVersion(models.Model):
     """Versao de Subscricao (Bilhete de portabilidade)"""
 
+    service_prov_id = models.CharField(max_length=4, db_index=True)
     subscription_version_id = models.IntegerField(primary_key=True)
     subscription_version_tn = models.CharField(max_length=11, db_index=True)
     subscription_recipient_sp = models.CharField(max_length=4)
@@ -135,6 +154,7 @@ class SubscriptionVersion(models.Model):
     class Meta:
         index_together = [
             [
+                'service_prov_id',
                 'subscription_version_tn',
                 'subscription_activation_timestamp',
                 'subscription_deletion_timestamp'
@@ -164,9 +184,24 @@ def message_post_save(sender, **kwargs):
     instance = kwargs.get('instance')
 
     if instance.status in ['received', 'queued']:
-        QueuedMessage.objects.create(message=instance)
+        try:
+            QueuedMessage.objects.get(message=instance)
+        except QueuedMessage.DoesNotExist:
+            QueuedMessage.objects.create(message=instance)
     else:
         QueuedMessage.objects.get(message=instance).delete()
+
+
+# noinspection PyUnusedLocal
+@receiver(post_save, sender=SubscriptionVersion, dispatch_uid='sv_post_save')
+def sv_post_save(sender, **kwargs):
+    instance = kwargs.get('instance')
+
+    try:
+        QueuedSync.objects.get(subscription_version=instance)
+    except QueuedSync.DoesNotExist:
+        QueuedSync.objects.create(subscription_version=instance)
+
 
 try:
     import uwsgi
@@ -175,14 +210,25 @@ except ImportError:
     # Synchronous processing
 
     # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedMessage, dispatch_uid='queue_post_save')
-    def queue_post_save(sender, **kwargs):
+    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
+    def queued_msg_post_save(sender, **kwargs):
         QueuedMessage.flush()
+
+    # noinspection PyUnusedLocal
+    @receiver(post_save, sender=QueuedSync, dispatch_uid='q_sync_post_save')
+    def queued_sync_post_save(sender, **kwargs):
+        QueuedSync.flush()
 
 else:
     # Asynchronous processing
 
     # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedMessage, dispatch_uid='queue_post_save')
-    def queue_post_save(sender, **kwargs):
-        uwsgi.mule_msg('flush_queue')
+    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
+    def queued_msg_post_save(sender, **kwargs):
+        uwsgi.mule_msg('flush_messages_queue')
+
+    # noinspection PyUnusedLocal
+    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_sync_post_save')
+    def queued_sync_post_save(sender, **kwargs):
+        uwsgi.mule_msg('flush_sync_queue')
+
