@@ -136,3 +136,17 @@ USE_I18N = True
 USE_L10N = True
 
 USE_TZ = True
+
+
+import json
+
+for f in ['/etc/bdosoa.json',
+          path.expanduser('~/.bdosoa.json'),
+          'bdosoa.json']:
+
+    if path.exists(f):
+        with open(f) as fp:
+            cfg_dict = json.load(fp)
+
+            locals().update(cfg_dict)
+
