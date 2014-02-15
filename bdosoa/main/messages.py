@@ -151,7 +151,7 @@ def process_sync(queued_sync):
     try:
         response = urlopen(Request(sync_url, post))
 
-        if response.code == '200':
+        if response.code == 200:
             logger.debug('Received reply from "{0}": {1}'.format(
                 host, response.msg))
 

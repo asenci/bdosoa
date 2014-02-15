@@ -174,8 +174,47 @@ class SubscriptionVersion(models.Model):
 # Signals handling
 #
 
+import logging
+import threading
+
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+
+class Flusher(threading.Thread):
+    def __init__(self, model, event, daemon=True, *args, **kwargs):
+        super(Flusher, self).__init__(*args, **kwargs)
+
+        self.daemon = daemon
+        self.model = model
+        self.event = event
+
+        self.start()
+
+    def run(self):
+        self.event.set()
+
+        count = 0
+        logger = logging.getLogger(__name__ + 'Flusher')
+
+        logger.debug('Starting flushing thread for "{0}"'.format(self.model))
+
+        for thread in threading.enumerate():
+            if getattr(thread, 'model', None) == self.model:
+                logger.debug(
+                    'Skipping run, model "{0}" is already being flushed'
+                    .format(self.model))
+                return
+
+        while self.event.is_set():
+            self.event.clear()
+
+            count += 1
+            logger.debug('Flushing "{0}" [{1}]'.format(self.model, count))
+
+            self.model.flush()
+
+        logger.debug('Finished flushing thread for "{0}"'.format(self.model))
 
 
 # noinspection PyUnusedLocal
@@ -189,7 +228,10 @@ def message_post_save(sender, **kwargs):
         except QueuedMessage.DoesNotExist:
             QueuedMessage.objects.create(message=instance)
     else:
-        QueuedMessage.objects.get(message=instance).delete()
+        try:
+            QueuedMessage.objects.get(message=instance).delete()
+        except QueuedMessage.DoesNotExist:
+            pass
 
 
 # noinspection PyUnusedLocal
@@ -203,32 +245,16 @@ def sv_post_save(sender, **kwargs):
         QueuedSync.objects.create(subscription_version=instance)
 
 
-try:
-    import uwsgi
+keep_flushing_queued_message = threading.Event()
+# noinspection PyUnusedLocal
+@receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
+def queued_msg_post_save(sender, **kwargs):
+    Flusher(QueuedMessage, keep_flushing_queued_message)
 
-except ImportError:
-    # Synchronous processing
 
-    # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
-    def queued_msg_post_save(sender, **kwargs):
-        QueuedMessage.flush()
-
-    # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedSync, dispatch_uid='q_sync_post_save')
-    def queued_sync_post_save(sender, **kwargs):
-        QueuedSync.flush()
-
-else:
-    # Asynchronous processing
-
-    # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
-    def queued_msg_post_save(sender, **kwargs):
-        uwsgi.mule_msg('flush_messages_queue')
-
-    # noinspection PyUnusedLocal
-    @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_sync_post_save')
-    def queued_sync_post_save(sender, **kwargs):
-        uwsgi.mule_msg('flush_sync_queue')
+keep_flushing_queued_sync = threading.Event()
+# noinspection PyUnusedLocal
+@receiver(post_save, sender=QueuedSync, dispatch_uid='q_sync_post_save')
+def queued_sync_post_save(sender, **kwargs):
+    Flusher(QueuedSync, keep_flushing_queued_sync)
 
