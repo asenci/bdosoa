@@ -3,10 +3,7 @@ import libspg.bdo
 import logging
 
 from django.http import HttpResponseForbidden
-from django.utils.timezone import now, utc
-from urllib import urlencode
-from urllib2 import HTTPError, Request, urlopen
-from urlparse import urlsplit
+from django.utils.timezone import utc
 
 from bdosoa.main.models import Message, ServiceProvider
 from bdosoa.main.models import SubscriptionVersion
@@ -102,71 +99,6 @@ def send_soap(message):
 
     message.save()
     logger.debug('Finished processing: {0}'.format(message))
-
-
-#
-# Database sync routines
-#
-
-def process_sync(queued_sync):
-    logger = logging.getLogger('{0}.process_sync'.format(__name__))
-
-    sv = queued_sync.subscription_version
-    sync_url = ServiceProvider.objects.get(
-        service_prov_id=sv.service_prov_id).sync_api_url
-
-    host = urlsplit(sync_url).netloc
-
-    post = urlencode({
-        'subscription_version_id':
-            sv.subscription_version_id,
-        'subscription_version_tn':
-            sv.subscription_version_tn,
-        'subscription_recipient_sp':
-            sv.subscription_recipient_sp,
-        'subscription_recipient_eot':
-            sv.subscription_recipient_eot,
-        'subscription_activation_timestamp':
-            sv.subscription_activation_timestamp,
-        'subscription_broadcast_timestamp':
-            sv.subscription_broadcast_timestamp,
-        'subscription_rn1':
-            sv.subscription_rn1,
-        'subscription_new_cnl':
-            sv.subscription_new_cnl,
-        'subscription_lnp_type':
-            sv.subscription_lnp_type,
-        'subscription_download_reason':
-            sv.subscription_download_reason,
-        'subscription_line_type':
-            sv.subscription_line_type,
-        'subscription_optional_data':
-            sv.subscription_optional_data,
-        'subscription_deletion_timestamp':
-            sv.subscription_deletion_timestamp,
-    })
-
-    logger.debug('Sending sync message to "{0}": {1!r}'.format(host, post))
-
-    try:
-        response = urlopen(Request(sync_url, post))
-
-        if response.code == 200:
-            logger.debug('Received reply from "{0}": {1}'.format(
-                host, response.msg))
-
-            queued_sync.delete()
-
-        else:
-            raise HTTPError(response.url, response.code, response.msg,
-                            response.headers, response.fp)
-
-    except HTTPError as e:
-        logger.exception(e)
-        queued_sync.status = 'error'
-        queued_sync.timestamp = now()
-        queued_sync.error_info += '{0}\n{1}\n\n'.format(str(e), e.read())
-        queued_sync.save()
 
 
 #

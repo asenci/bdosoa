@@ -73,34 +73,6 @@ class QueuedMessage(models.Model):
             process_message(item.message)
 
 
-class QueuedSync(models.Model):
-    """Fila de sincronismo"""
-
-    timestamp = models.DateTimeField(auto_now_add=True)
-    subscription_version = models.OneToOneField('SubscriptionVersion')
-    status = models.CharField(max_length=6, default='queued', choices=[
-        ('queued', 'Queued'),
-        ('error', 'Error'),
-    ])
-    error_info = models.TextField(blank=True, default='')
-
-    class Meta:
-        ordering = ['timestamp']
-
-    def __unicode__(self):
-        return '[{0}] {1}: {2}'.format(
-            self.subscription_version.service_prov_id,
-            self.subscription_version.subscription_version_id,
-            self.status)
-
-    @classmethod
-    def flush(cls):
-        from bdosoa.main.messages import process_sync
-
-        for item in cls.objects.all():
-            process_sync(item)
-
-
 class ServiceProvider(models.Model):
     """Provedor de Servico"""
 
@@ -234,27 +206,8 @@ def message_post_save(sender, **kwargs):
             pass
 
 
-# noinspection PyUnusedLocal
-@receiver(post_save, sender=SubscriptionVersion, dispatch_uid='sv_post_save')
-def sv_post_save(sender, **kwargs):
-    instance = kwargs.get('instance')
-
-    try:
-        QueuedSync.objects.get(subscription_version=instance)
-    except QueuedSync.DoesNotExist:
-        QueuedSync.objects.create(subscription_version=instance)
-
-
 keep_flushing_queued_message = threading.Event()
 # noinspection PyUnusedLocal
 @receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
 def queued_msg_post_save(sender, **kwargs):
     Flusher(QueuedMessage, keep_flushing_queued_message)
-
-
-keep_flushing_queued_sync = threading.Event()
-# noinspection PyUnusedLocal
-@receiver(post_save, sender=QueuedSync, dispatch_uid='q_sync_post_save')
-def queued_sync_post_save(sender, **kwargs):
-    Flusher(QueuedSync, keep_flushing_queued_sync)
-
