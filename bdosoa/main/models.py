@@ -19,7 +19,7 @@ class Message(models.Model):
 
     message_date_time = models.DateTimeField()
     service_prov_id = models.CharField(max_length=4)
-    invoke_id = models.IntegerField()
+    invoke_id = models.BigIntegerField()
     direction = models.CharField(max_length=8, choices=[
         ('BDRtoBDO', 'BDR->BDO'),
         ('BDOtoBDR', 'BDR<-BDO'),
