@@ -52,7 +52,7 @@ def receive_soap(header, message, token='', **kwargs):
             invoke_id=msg_obj.invoke_id,
             direction='BDRtoBDO',
             command_tag=type(msg_obj).__name__,
-            status='received',
+            status='queued',
             message_body=message,
         )
 
@@ -67,37 +67,26 @@ def receive_soap(header, message, token='', **kwargs):
 def send_soap(message):
     logger = logging.getLogger('{0}.send_soap'.format(__name__))
 
-    try:
-        logger.debug('Sending message: {0}'.format(message))
+    logger.debug('Sending message: {0}'.format(message))
 
-        service_provider = ServiceProvider.objects.get(
-            service_prov_id=message.service_prov_id)
+    service_provider = ServiceProvider.objects.get(
+        service_prov_id=message.service_prov_id)
 
-        soap_client = SOAPClient(
-            service_provider.spg_soap_url, 'SPG/SoapServer')
+    soap_client = SOAPClient(
+        service_provider.spg_soap_url, 'SPG/SoapServer')
 
-        header = '{0}|{1}|{2:%s}'.format(
-            message.service_prov_id,
-            message.invoke_id,
-            message.message_date_time,
-        )
+    header = '{0}|{1}|{2:%s}'.format(
+        message.service_prov_id,
+        message.invoke_id,
+        message.message_date_time,
+    )
 
-        result = soap_client.processRequest(header=header,
-                                            message=message.message_body)
+    result = soap_client.processRequest(header=header,
+                                        message=message.message_body)
 
-    except Exception as e:
-        logger.exception(e)
-        message.status = 'error'
-        message.error_info += str(e) + '\n\n'
+    if not result[0] == '0':
+        raise ValueError('Received "{0}" from SPG'.format(result))
 
-    else:
-        if result[0] == '0':
-            message.status = 'sent'
-        else:
-            logger.error('Received "{0}" from SPG'.format(result))
-            message.error_info += 'Received "{0}" from SPG\n\n'.format(result)
-
-    message.save()
     logger.debug('Finished processing: {0}'.format(message))
 
 
@@ -108,54 +97,55 @@ def send_soap(message):
 def process_message(message, send_reply=True):
     logger = logging.getLogger('{0}.process_message'.format(__name__))
 
+    logger.debug('Processing message: {0}'.format(message))
     try:
-        logger.debug('Processing message: {0}'.format(message))
 
-        if message.status == 'received':
+        if message.status == 'done':
+            return
+
+        if message.direction == 'BDRtoBDO':
+            msg_obj = libspg.Message.from_string(message.message_body)
+
             try:
-                msg_obj = libspg.Message.from_string(message.message_body)
+                handler = MESSAGE_HANDLERS.get(type(msg_obj))
 
-                try:
-                    handler = MESSAGE_HANDLERS.get(type(msg_obj))
+            except KeyError:
+                raise TypeError('Invalid message type: {0}'.format(
+                    type(msg_obj).__name__))
 
-                except KeyError:
-                    raise TypeError('Invalid message type: {0}'.format(
-                        type(msg_obj).__name__))
+            reply = handler(msg_obj)
 
-                reply = handler(msg_obj)
+            # Enqueue reply
+            if reply is not None and send_reply:
+                reply_log = Message.objects.create(
+                    message_date_time=reply.message_date_time.replace(
+                        tzinfo=utc),
+                    service_prov_id=reply.service_prov_id,
+                    invoke_id=reply.invoke_id,
+                    direction='BDOtoBDR',
+                    command_tag=type(reply).__name__,
+                    status='queued',
+                    message_body=str(reply),
+                )
 
-                # Enqueue reply
-                if reply is not None and send_reply:
-                    reply_log = Message.objects.create(
-                        message_date_time=reply.message_date_time.replace(
-                            tzinfo=utc),
-                        service_prov_id=reply.service_prov_id,
-                        invoke_id=reply.invoke_id,
-                        direction='BDOtoBDR',
-                        command_tag=type(reply).__name__,
-                        status='queued',
-                        message_body=str(reply),
-                    )
+                logger.debug('Message enqueued: {0}'.format(reply_log))
 
-                    logger.debug('Message enqueued: {0}'.format(reply_log))
-
-            except Exception as e:
-                logger.exception(e)
-                message.status = 'error'
-                message.error_info += str(e) + '\n\n'
-
-            else:
-                message.status = 'processed'
-
-            message.save()
-
-        elif message.status == 'queued':
+        elif message.direction == 'BDOtoBDR':
             send_soap(message)
+
+        else:
+            raise ValueError(
+                'Invalid message direction: "{0}"'.format(message.direction))
 
     except Exception as e:
         logger.exception(e)
         message.error_info = str(e) + '\n\n'
-        message.save()
+        message.status = 'error'
+
+    else:
+        message.status = 'done'
+
+    message.save()
 
     logger.debug('Finished processing message: {0}'.format(message))
 

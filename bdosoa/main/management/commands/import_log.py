@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db.models.signals import post_save
 from django.utils.timezone import utc
 
-from bdosoa.main.messages import MESSAGE_HANDLERS
+from bdosoa.main.messages import process_message
 from bdosoa.main.models import Message
 
 
@@ -36,19 +36,11 @@ class Command(BaseCommand):
                             invoke_id=message.invoke_id,
                             direction='BDRtoBDO',
                             command_tag=type(message).__name__,
-                            status='processed',
+                            status='done',
                             message_body=line,
                         )
 
-                        try:
-                            handler = MESSAGE_HANDLERS.get(type(message))
-                            handler(message)
-
-                        except Exception as e:
-                            msg_log.error_info += str(e) + '\n\n'
-                            msg_log.status = 'error'
-                            msg_log.save()
-                            logger.exception(e)
+                        process_message(msg_log, send_reply=False)
 
         except Exception as e:
             logger.exception(e)

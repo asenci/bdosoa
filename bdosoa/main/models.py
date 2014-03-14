@@ -26,12 +26,10 @@ class Message(models.Model):
         ('BDRtoSOA', 'BDR->SOA'),
         ('SOAtoBDR', 'BDR<-SOA')])
     command_tag = models.CharField(max_length=255)
-    status = models.CharField(max_length=9, choices=[
-        ('error', 'Error'),
-        ('received', 'Received'),
-        ('processed', 'Processed'),
+    status = models.CharField(max_length=6, choices=[
         ('queued', 'Queued'),
-        ('sent', 'Sent')])
+        ('error', 'Error'),
+        ('done', 'Done')])
     message_body = models.TextField()
     error_info = models.TextField(blank=True, default='')
 
@@ -41,36 +39,6 @@ class Message(models.Model):
     def __unicode__(self):
         return '[{message_date_time}|{service_prov_id}|{invoke_id}]' \
                ' {command_tag}'.format(**self.__dict__)
-
-
-class QueuedMessage(models.Model):
-    """Fila de mensagens"""
-
-    timestamp = models.DateTimeField(auto_now_add=True)
-    message = models.OneToOneField('Message')
-
-    message_date_time = property(lambda self: self.message.message_date_time)
-    service_prov_id = property(lambda self: self.message.service_prov_id)
-    invoke_id = property(lambda self: self.message.invoke_id)
-    direction = property(lambda self: self.message.direction)
-    command_tag = property(lambda self: self.message.command_tag)
-    status = property(lambda self: self.message.status)
-    message_body = property(lambda self: self.message.message_body)
-    error_info = property(lambda self: self.message.error_info)
-
-    class Meta:
-        ordering = ['timestamp']
-
-    def __unicode__(self):
-        return '{0} - [{service_prov_id}|{invoke_id}] {command_tag}'.format(
-            self.id, **self.message.__dict__)
-
-    @classmethod
-    def flush(cls):
-        from bdosoa.main.messages import process_message
-
-        for item in cls.objects.all():
-            process_message(item.message)
 
 
 class ServiceProvider(models.Model):
@@ -152,41 +120,42 @@ import threading
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+keep_flushing_in = threading.Event()
+keep_flushing_out = threading.Event()
 
-class Flusher(threading.Thread):
-    def __init__(self, model, event, daemon=True, *args, **kwargs):
-        super(Flusher, self).__init__(*args, **kwargs)
+def flush_messages(direction):
 
-        self.daemon = daemon
-        self.model = model
-        self.event = event
+    count = 0
+    logger = logging.getLogger(
+        __name__ + 'flush_messages_{0}'.format(direction))
 
-        self.start()
+    logger.debug('Flushing messages')
 
-    def run(self):
-        self.event.set()
+    t = threading.current_thread()
+    t.keep_flushing.set()
 
-        count = 0
-        logger = logging.getLogger(__name__ + 'Flusher')
+    while t.keep_flushing.is_set():
+        t.keep_flushing.clear()
 
-        logger.debug('Starting flushing thread for "{0}"'.format(self.model))
+        count += 1
+        logger.debug('Iteration: {0}'.format(count))
 
-        for thread in threading.enumerate():
-            if getattr(thread, 'model', None) == self.model:
-                logger.debug(
-                    'Skipping run, model "{0}" is already being flushed'
-                    .format(self.model))
-                return
+        from bdosoa.main.messages import process_message
 
-        while self.event.is_set():
-            self.event.clear()
+        msgs = Message.objects \
+            .filter(direction=direction) \
+            .exclude(status='done') \
+            .order_by('message_date_time')
 
-            count += 1
-            logger.debug('Flushing "{0}" [{1}]'.format(self.model, count))
+        for msg in msgs:
+            try:
+                process_message(msg)
 
-            self.model.flush()
+            except Exception as e:
+                logger.exception(e)
+                break
 
-        logger.debug('Finished flushing thread for "{0}"'.format(self.model))
+    logger.debug('Finished flushing messages')
 
 
 # noinspection PyUnusedLocal
@@ -194,20 +163,17 @@ class Flusher(threading.Thread):
 def message_post_save(sender, **kwargs):
     instance = kwargs.get('instance')
 
-    if instance.status in ['received', 'queued']:
-        try:
-            QueuedMessage.objects.get(message=instance)
-        except QueuedMessage.DoesNotExist:
-            QueuedMessage.objects.create(message=instance)
-    else:
-        try:
-            QueuedMessage.objects.get(message=instance).delete()
-        except QueuedMessage.DoesNotExist:
-            pass
+    if instance.status == 'queued':
 
+        for t in threading.enumerate():
+            if t.name == instance.direction:
+                t.keep_flushing.set()
+                break
 
-keep_flushing_queued_message = threading.Event()
-# noinspection PyUnusedLocal
-@receiver(post_save, sender=QueuedMessage, dispatch_uid='q_msg_post_save')
-def queued_msg_post_save(sender, **kwargs):
-    Flusher(QueuedMessage, keep_flushing_queued_message)
+        else:
+            t = threading.Thread(name=instance.direction,
+                                 target=flush_messages,
+                                 args=instance.direction)
+            t.keep_flushing = threading.Event()
+            t.daemon = True
+            t.start()

@@ -40,47 +40,6 @@ class MessageAdmin(admin.ModelAdmin):
     f_time.short_description = 'timestamp'
 
 
-class QueuedMessageAdmin(admin.ModelAdmin):
-    fields = (
-        'timestamp',
-        'message',
-        'f_time',
-        'service_prov_id',
-        'invoke_id',
-        'direction',
-        'command_tag',
-        'status',
-        'message_body',
-        'error_info',
-    )
-    list_display = (
-        'timestamp',
-        'message',
-        'f_time',
-        'service_prov_id',
-        'invoke_id',
-        'direction',
-        'command_tag',
-        'status',
-    )
-    list_per_page = 20
-    readonly_fields = (
-        'f_time',
-        'service_prov_id',
-        'invoke_id',
-        'direction',
-        'command_tag',
-        'status',
-        'message_body',
-        'error_info',
-    )
-
-    # noinspection PyMethodMayBeStatic
-    def f_time(self, obj):
-        return obj.message_date_time.strftime('%x %X%z')
-    f_time.short_description = 'message_date_time'
-
-
 class ServiceProviderAdmin(admin.ModelAdmin):
     list_display = (
         'service_prov_id',
@@ -126,6 +85,5 @@ class SubscriptionVersionAdmin(admin.ModelAdmin):
 
 
 admin.site.register(models.Message, MessageAdmin)
-admin.site.register(models.QueuedMessage, QueuedMessageAdmin)
 admin.site.register(models.ServiceProvider, ServiceProviderAdmin)
 admin.site.register(models.SubscriptionVersion, SubscriptionVersionAdmin)

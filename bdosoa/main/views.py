@@ -4,7 +4,7 @@ from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 
 from bdosoa.main.messages import receive_soap
-from bdosoa.main.models import QueuedMessage
+from bdosoa.main.models import Message
 from bdosoa.main.soap import SOAPApplication
 
 
@@ -38,7 +38,15 @@ def api(request):
             return HttpResponse('Command missing\n')
 
         if command == 'flush_queue':
-            post_save.send(QueuedMessage)
+            instance = object()
+            instance.status = 'queued'
+            instance.direction = 'BDRtoBDO'
+            post_save.send(Message, instance=instance)
+
+            instance = object()
+            instance.status = 'queued'
+            instance.direction = 'BDOtoBDR'
+            post_save.send(Message, instance=instance)
 
         return HttpResponse('OK\n')
 
