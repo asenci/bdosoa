@@ -127,7 +127,7 @@ def flush_messages(direction):
 
     count = 0
     logger = logging.getLogger(
-        __name__ + 'flush_messages_{0}'.format(direction))
+        '{0}.flush_messages_{1}'.format(__name__, direction))
 
     logger.debug('Flushing messages')
 
@@ -143,8 +143,8 @@ def flush_messages(direction):
         from bdosoa.main.messages import process_message
 
         msgs = Message.objects \
-            .filter(direction=direction) \
             .exclude(status='done') \
+            .filter(direction=direction) \
             .order_by('message_date_time')
 
         for msg in msgs:
@@ -173,7 +173,7 @@ def message_post_save(sender, **kwargs):
         else:
             t = threading.Thread(name=instance.direction,
                                  target=flush_messages,
-                                 args=instance.direction)
+                                 args=(instance.direction,))
             t.keep_flushing = threading.Event()
             t.daemon = True
             t.start()

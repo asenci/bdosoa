@@ -38,15 +38,15 @@ def api(request):
             return HttpResponse('Command missing\n')
 
         if command == 'flush_queue':
-            instance = object()
-            instance.status = 'queued'
-            instance.direction = 'BDRtoBDO'
-            post_save.send(Message, instance=instance)
+            class Instance(object):
+                status = 'queued'
+                direction = None
 
-            instance = object()
-            instance.status = 'queued'
-            instance.direction = 'BDOtoBDR'
-            post_save.send(Message, instance=instance)
+                def __init__(self, direction):
+                    self.direction = direction
+
+            post_save.send(Message, instance=Instance('BDRtoBDO'))
+            post_save.send(Message, instance=Instance('BDOtoBDR'))
 
         return HttpResponse('OK\n')
 
