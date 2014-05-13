@@ -17,7 +17,7 @@ def gen_token(size=32):
 class Message(models.Model):
     """Log de Mensagens"""
 
-    message_date_time = models.DateTimeField()
+    message_date_time = models.DateTimeField(db_index=True)
     service_prov_id = models.CharField(max_length=4)
     invoke_id = models.BigIntegerField()
     direction = models.CharField(max_length=8, choices=[
@@ -34,6 +34,10 @@ class Message(models.Model):
     error_info = models.TextField(blank=True, default='')
 
     class Meta:
+        index_together = [
+            ['direction', 'status'],
+        ]
+
         ordering = ['-message_date_time']
 
     def __unicode__(self):
