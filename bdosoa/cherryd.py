@@ -3,7 +3,7 @@
 
 
 def start(configfiles=None, daemonize=False, debug=False, environment=None,
-          gid=None, imports=None, pidfile=None, uid=None):
+          gid=None, imports=None, pidfile=None, quiet=False, uid=None):
     """Subscribe all engine plugins and start the engine."""
 
     import cherrypy
@@ -11,6 +11,8 @@ def start(configfiles=None, daemonize=False, debug=False, environment=None,
 
     if debug:
         cherrypy.log.error_log.setLevel(10)
+    elif quiet:
+        cherrypy.log.error_log.setLevel(30)
 
     for i in imports or []:
         exec('import %s' % i)
@@ -34,12 +36,16 @@ def start(configfiles=None, daemonize=False, debug=False, environment=None,
 
     if gid or uid:
         # Get the gid from the group name
-        if gid and not isinstance(gid, int):
+        try:
+            gid = int(gid)
+        except ValueError:
             import grp
             gid = grp.getgrnam(gid).gr_gid
 
         # Get the uid from the user name
-        if uid and not isinstance(uid, int):
+        try:
+            uid = int(uid)
+        except ValueError:
             import pwd
             uid = pwd.getpwnam(uid).pw_uid
 
@@ -80,6 +86,8 @@ if __name__ == '__main__':
                  help='store the process id in the given file')
     p.add_option('-P', '--path', action='append', dest='paths',
                  help='add the given path(s) to sys.path')
+    p.add_option('-q', '--quiet', action='store_true', dest='quiet',
+                 help='only log warnings and errors')
     p.add_option('-u', '--uid', dest='uid',
                  help='setuid to the specified user/uid')
     options, args = p.parse_args()
@@ -95,5 +103,6 @@ if __name__ == '__main__':
         gid=options.gid,
         imports=options.imports,
         pidfile=options.pidfile,
+        quiet=options.quiet,
         uid=options.uid,
     )
