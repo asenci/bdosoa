@@ -11,6 +11,8 @@ class ServiceProvider(Base):
 
     __tablename__ = 'serviceprovider'
     __table_args__ = (
+        Index('ix_serviceprovider_spid_enabled',
+              'spid', 'enabled'),
         Index('ix_serviceprovider_spid_token_enabled',
               'spid', 'token', 'enabled'),
     )

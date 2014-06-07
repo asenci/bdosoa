@@ -1,16 +1,16 @@
-import sys
-import traceback
-from Queue import Empty, Queue
-from threading import Thread
-
 import cherrypy
 import libspg.bdo
-from libspg import Message as MessageObj
-from sqlalchemy.orm.exc import NoResultFound
+import sys
 
 from bdosoa.models import Message, ServiceProvider, SubscriptionVersion
 from bdosoa.models.meta import Session
 from bdosoa.soap import SOAPClient
+from libspg import Message as MessageObj
+from Queue import Empty, Queue
+from sqlalchemy.orm.exc import NoResultFound
+from threading import Thread
+from traceback import format_exception
+from subprocess import Popen, PIPE
 
 
 class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
@@ -36,8 +36,16 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
             libspg.bdo.SVQueryReply: lambda x: None,
         }
 
+    def logger(self, msg="", msg_obj=None, level=20, traceback=False):
+        if msg_obj:
+            msg = '[{0}|{1}|{2}] {3}'.format(
+                msg_obj.invoke_id, msg_obj.service_prov_id,
+                msg_obj.__class__.__name__, msg)
+
+        self.bus.log(msg=msg, level=level, traceback=traceback)
+
     def start(self):
-        self.bus.log('Starting message processing plugin.', level=10)
+        self.logger('Starting message processing plugin.', level=10)
 
         self.receiving = True
         self.receiver_queue = Queue()
@@ -60,11 +68,11 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
 
         self.bus.subscribe('bdosoa-message', self.queue_message)
 
-        self.bus.log('Started message processing plugin.')
+        self.logger('Started message processing plugin.')
     start.priority = 70
 
     def stop(self):
-        self.bus.log('Stopping message processing plugin.', level=10)
+        self.logger('Stopping message processing plugin.', level=10)
 
         self.bus.unsubscribe('bdosoa-message', self.queue_message)
 
@@ -75,21 +83,21 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
         self.working = False
 
         # Finish recording the last message on the database
-        self.bus.log('Waiting for the receiver thread.')
+        self.logger('Waiting for the receiver thread.')
         self.receiver_thread.join()
 
         # Finish processing the last message
-        self.bus.log('Waiting for the worker thread.')
+        self.logger('Waiting for the worker thread.')
         self.worker_thread.join()
 
-        self.bus.log('Stopped message processing plugin.')
+        self.logger('Stopped message processing plugin.')
 
     def graceful(self):
         self.stop()
         self.start()
 
     def load_stalled(self):
-        self.bus.log('Loading stalled messages into queue.', level=10)
+        self.logger('Loading stalled messages into queue.')
 
         stalled = Message.filter_by(done=False)
         Session.remove()
@@ -97,19 +105,15 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
         for msg_log in stalled:
             msg_obj = MessageObj.from_string(msg_log.message_body)
             self.worker_queue.put((msg_obj, msg_log.id))
-            self.bus.log('[{0}|{1}] Loaded message: {2}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 msg_log.id),
-                         level=10)
+            self.logger('Message id {0} loaded from the database.'.format(
+                msg_log.id), msg_obj, level=10)
 
     def queue_message(self, msg_obj, msg_txt):
         self.receiver_queue.put((msg_obj, msg_txt))
-        self.bus.log('[{0}|{1}] Received message: {2!r}'.format(
-            msg_obj.invoke_id, msg_obj.service_prov_id, msg_obj), level=10)
+        self.logger('Message received.', msg_obj)
 
     def receiver(self):
-        self.bus.log('Starting the receiver thread.', level=10)
+        self.logger('Starting the receiver thread.', level=10)
 
         # Workaround for children thread receiving the same Request object
         # causing the database to be bind to the same object on all threads
@@ -134,17 +138,16 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
                 raise
             else:
                 self.worker_queue.put((msg_obj, msg_log.id))
-                self.bus.log('[{0}|{1}] Message added to the queue.'.format(
-                    msg_obj.invoke_id, msg_obj.service_prov_id), level=10)
+                self.logger('Message added to the queue.', msg_obj, level=10)
             finally:
                 Session.remove()
                 self.receiver_queue.task_done()
 
         else:
-            self.bus.log('Stopped the receiver thread.', level=10)
+            self.logger('Stopped the receiver thread.', level=10)
 
     def worker(self):
-        self.bus.log('Starting the worker thread.', level=10)
+        self.logger('Starting the worker thread.', level=10)
 
         # Workaround for children thread receiving the same Request object
         # causing the database to be bind to the same object on all threads
@@ -156,8 +159,7 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
             except Empty:
                 continue
 
-            self.bus.log('[{0}|{1}] Processing message.'.format(
-                msg_obj.invoke_id, msg_obj.service_prov_id), level=10)
+            self.logger('Processing message.', msg_obj, level=10)
 
             try:
                 self.process_message(msg_obj, msg_log_id)
@@ -169,11 +171,10 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
                 Session.remove()
                 self.worker_queue.task_done()
 
-            self.bus.log('[{0}|{1}] Finished processing message.'.format(
-                msg_obj.invoke_id, msg_obj.service_prov_id), level=10)
+            self.logger('Finished processing message.', msg_obj, level=10)
 
         else:
-            self.bus.log('Stopped the worker thread.', level=10)
+            self.logger('Stopped the worker thread.', level=10)
 
     def process_message(self, msg_obj, msg_log_id):
         msg_log = Message.get(msg_log_id)
@@ -192,17 +193,14 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
                     'Invalid message: {0!r}'.format(msg_obj))
 
         except:
-            self.bus.log('[{0}|{1}] Error processing message.'
-                         .format(msg_obj.invoke_id, msg_obj.service_prov_id),
-                         traceback=True)
+            info = ''.join(format_exception(*sys.exc_info()))
 
-            # Stop processing messages
-            self.working = False
+            self.logger('Error processing message.', msg_obj, level=40,
+                        traceback=True)
 
-            # Record error on the database
+
             msg_log.error = True
-            msg_log.error_info += ''.join(
-                traceback.format_exception(*sys.exc_info()) + ['\n\n'])
+            msg_log.error_info += info + '\n\n'
 
         else:
             msg_log.error = False
@@ -213,50 +211,32 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
         try:
             handler = self.MESSAGE_HANDLERS.get(type(msg_obj))
 
-            self.bus.log('[{0}|{1}] Handler: {2!r}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 handler),
-                         level=10)
+            self.logger('Handler: {0!r}'.format(handler), msg_obj, level=10)
 
         except KeyError:
-            raise TypeError(
-                'No handler for message: {0!r}'.format(msg_obj))
+            raise TypeError('No handler for message: {0!r}'.format(msg_obj))
 
         # Invoke handler
         reply_obj = handler(msg_obj)
 
         # Enqueue reply if any
         if reply_obj is not None:
-            self.bus.log(
-                '[{0}|{1}] Handler generated reply: {2!r}'
-                .format(msg_obj.invoke_id, msg_obj.service_prov_id, reply_obj),
-                level=10)
+            self.logger('Handler generated reply: {0!r}'.format(reply_obj),
+                        msg_obj, level=10)
 
-            cherrypy.engine.publish('bdosoa-message',
-                                    reply_obj,
-                                    str(reply_obj))
+            cherrypy.engine.publish(
+                'bdosoa-message', reply_obj, str(reply_obj))
 
     def process_bdo_to_bdr(self, msg_obj):
-        service_provider = ServiceProvider.get_by(spid=msg_obj.service_prov_id)
+        service_provider = ServiceProvider.get_by(
+            spid=msg_obj.service_prov_id, enabled=True)
 
-        if not service_provider.enabled:
-            self.bus.log('[{0}|{1}] Service provider disabled.'
-                         .format(msg_obj.invoke_id, msg_obj.service_prov_id),
-                         level=30)
+        if not service_provider.spg_url:
+            self.logger('No SPG url for the service provider.', msg_obj)
             return
 
-        elif not service_provider.spg_url:
-            self.bus.log('[{0}|{1}] No SPG url for the service provider.'
-                         .format(msg_obj.invoke_id, msg_obj.service_prov_id),
-                         level=10)
-            return
-
-        self.bus.log('[{0}|{1}] Sending reply to: {2}'
-                     .format(msg_obj.invoke_id,
-                             msg_obj.service_prov_id,
-                             service_provider.spg_url),
-                     level=10)
+        self.logger('Sending message to: {0}'.format(service_provider.spg_url),
+                    msg_obj, level=10)
 
         soap_client = SOAPClient(service_provider.spg_url, 'SPG/SoapServer')
 
@@ -269,57 +249,42 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
         result = soap_client.processRequest(
             header=header, message=str(msg_obj))
 
-        if not result[0] == '0':
-            raise ValueError(
-                'Received "{0}" from SPG'.format(result))
+        if result != ('0',):
+            raise ValueError('Received "{0}" from SPG'.format(result))
 
     def process_sv_create_download(self, msg_obj):
         tn_version_id = msg_obj.message_content.subscription_tn_version_id
         data = msg_obj.message_content.subscription_data
-        sv = None
-
-        attrs = dict(
-            subscription_version_tn=tn_version_id.tn,
-            subscription_recipient_sp=data.subscription_recipient_sp,
-            subscription_recipient_eot=data.subscription_recipient_eot,
-            subscription_activation_timestamp=data.subscription_activation_timestamp,
-            subscription_rn1=data.subscription_rn1,
-            subscription_new_cnl=data.subscription_new_cnl,
-            subscription_lnp_type=data.subscription_lnp_type,
-            subscription_download_reason=data.subscription_download_reason,
-            subscription_line_type=data.subscription_line_type,
-            subscription_optional_data=data.subscription_optional_data
-        )
-
-        if data.broadcast_window_start_timestamp:
-            attrs['subscription_broadcast_timestamp'] = \
-                data.broadcast_window_start_timestamp
 
         try:
             sv = SubscriptionVersion.get_by(
                 service_provider_id=msg_obj.service_prov_id,
                 subscription_version_id=tn_version_id.version_id)
 
-            self.bus.log('[{0}|{1}] Updating subscription version: {2}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 tn_version_id.version_id),
-                         level=10)
+            self.logger('Updating subscription version: {0}'.format(
+                tn_version_id.version_id), msg_obj)
 
         except NoResultFound:
             sv = SubscriptionVersion.create(
                 service_provider_id=msg_obj.service_prov_id,
                 subscription_version_id=tn_version_id.version_id)
 
-            self.bus.log('[{0}|{1}] Creating subscription version: {2}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 tn_version_id.version_id),
-                         level=10)
+            self.logger('New subscription version: {0}'.format(
+                tn_version_id.version_id), msg_obj)
 
-        finally:
-            for key, value in attrs.items():
-                setattr(sv, key, value)
+        sv.subscription_version_tn = tn_version_id.tn
+        sv.subscription_recipient_sp = data.subscription_recipient_sp
+        sv.subscription_recipient_eot = data.subscription_recipient_eot
+        sv.subscription_activation_timestamp = \
+            data.subscription_activation_timestamp
+        sv.subscription_broadcast_timestamp = \
+            data.broadcast_window_start_timestamp or None
+        sv.subscription_rn1 = data.subscription_rn1
+        sv.subscription_new_cnl = data.subscription_new_cnl
+        sv.subscription_lnp_type = data.subscription_lnp_type
+        sv.subscription_download_reason = data.subscription_download_reason
+        sv.subscription_line_type = data.subscription_line_type
+        sv.subscription_optional_data = data.subscription_optional_data
 
         return msg_obj.reply()
 
@@ -333,73 +298,67 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
                 subscription_version_id=version_id,
             )
 
-            self.bus.log('[{0}|{1}] Updating subscription version: {2}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 version_id),
-                         level=10)
+            self.logger('Updating subscription version: {0}'.format(
+                version_id), msg_obj)
 
         except NoResultFound:
-            self.bus.log('[{0}|{1}] Subscription version not found: {2}'
-                         .format(msg_obj.invoke_id,
-                                 msg_obj.service_prov_id,
-                                 version_id),
-                         level=10)
-            return
+            sv = SubscriptionVersion.create(
+                service_provider_id=msg_obj.service_prov_id,
+                subscription_version_id=version_id)
+
+            self.logger('New subscription version: {0}'.format(version_id),
+                        msg_obj)
 
         sv.subscription_download_reason = data.subscription_download_reason
-        sv.subscription_deletion_timestamp = msg_obj.message_date_time
+        sv.subscription_deletion_timestamp = \
+            data.broadcast_window_start_timestamp or msg_obj.message_date_time
 
         return msg_obj.reply()
 
     def process_query_bdo_svs(self, msg_obj):
-        query = msg_obj.message_content.query_expression
-        query = query.lstrip('"').rstrip('"')
+        query_string = msg_obj.message_content.query_expression
 
-        self.bus.log(
-            '[{0}|{1}] Query string: {2}'
-            .format(msg_obj.invoke_id, msg_obj.service_prov_id, query),
-            level=10)
+        self.logger('Query string: {0}'.format(query_string), msg_obj)
 
-        reply_list = []
-        sv_list = []
+        if query_string.startswith('"') and query_string.endswith('"'):
+            query_string = query_string.lstrip('" ').rstrip('" ')
 
-        if query:
-            sv_list = SubscriptionVersion.filter_by(
-                service_provider_id=msg_obj.service_prov_id
-            ).filter(
-                SubscriptionVersion.subscription_deletion_timestamp.is_(None)
-            ).filter(
-                query
-            ).all()
-
-        for sv in sv_list:
-            sv_obj = libspg.SubscriptionVersionData(
+        query_result = [
+            libspg.SubscriptionVersionData(
                 libspg.TNVersionId(
                     tn=sv.subscription_version_tn,
-                    version_id=sv.subscription_version_id
+                    version_id=sv.subscription_version_id,
                 ),
                 libspg.SubscriptionData(
                     subscription_recipient_sp=sv.subscription_recipient_sp,
                     subscription_recipient_eot=sv.subscription_recipient_eot,
-                    subscription_activation_timestamp=sv.subscription_activation_timestamp,
-                    broadcast_window_start_timestamp=sv.subscription_broadcast_timestamp,
+                    subscription_activation_timestamp=
+                    sv.subscription_activation_timestamp,
+                    broadcast_window_start_timestamp=
+                    sv.subscription_broadcast_timestamp,
                     subscription_rn1=sv.subscription_rn1,
                     subscription_new_cnl=sv.subscription_new_cnl,
                     subscription_lnp_type=sv.subscription_lnp_type,
-                    subscription_download_reason=sv.subscription_download_reason,
+                    subscription_download_reason=
+                    sv.subscription_download_reason,
                     subscription_line_type=sv.subscription_line_type,
                     subscription_optional_data=sv.subscription_optional_data,
                 )
             )
 
-            reply_list.append(sv_obj)
+            for sv in SubscriptionVersion.filter_by(
+                service_provider_id=msg_obj.service_prov_id
+            ).filter(
+                SubscriptionVersion.subscription_deletion_timestamp.is_(None)
+            ).filter(
+                query_string
+            ).all() if query_string
+        ]
 
-        self.bus.log(
-            '[{0}|{1}] Query result: {2}'
-            .format(msg_obj.invoke_id, msg_obj.service_prov_id,
-                    [sv.subscription_tn_version_id.version_id
-                     for sv in reply_list]),
-            level=10)
+        self.logger('Query result: {0}'.format(
+            [
+                sv.subscription_tn_version_id.version_id
+                for sv in query_result
+            ]), msg_obj)
 
-        return msg_obj.reply(reply_list)
+        return msg_obj.reply(query_result)
