@@ -5,6 +5,7 @@ import sys
 from bdosoa.models import Message, ServiceProvider, SubscriptionVersion
 from bdosoa.models.meta import Session
 from bdosoa.soap import SOAPClient
+from email.mime.text import MIMEText
 from libspg import Message as MessageObj
 from Queue import Empty, Queue
 from sqlalchemy.orm.exc import NoResultFound
@@ -198,6 +199,13 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
             self.logger('Error processing message.', msg_obj, level=40,
                         traceback=True)
 
+            mail = MIMEText('{0}\n\n{1}'.format(info, msg_log.message_body))
+            mail['To'] = 'root'
+            mail['Subject'] = 'BDOSOA - Error processing message'
+            p = Popen(['/usr/sbin/sendmail', '-t'], stdin=PIPE)
+            p.communicate(mail.as_string())
+            p.stdin.close()
+            p.wait()
 
             msg_log.error = True
             msg_log.error_info += info + '\n\n'
