@@ -1,9 +1,12 @@
 from sqlalchemy import create_engine, Column, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
 
 
 class Base(object):
+    NoResultFound = NoResultFound
+
     id = Column(Integer, primary_key=True)
 
     @classmethod
@@ -46,7 +49,11 @@ class Session(scoped_session):
             sessionmaker(), lambda: cherrypy.serving.request)
 
     def cleanup_hook(self):
-        """Clean up scoped session"""
+        """Commit scoped session"""
+        import cherrypy
+
+        cherrypy.log.error('Commit invoked for session: {0!r}'.format(
+            Session()), 'ENGINE', severity=10)
 
         try:
             self.commit()
@@ -58,19 +65,18 @@ class Session(scoped_session):
 
     def config_handler(self, key, value):
         """Handle config attributes"""
-
         import cherrypy
 
         if key == 'url':
             self.configure(bind=create_engine(value))
-            cherrypy.engine.log('Configured database access string.')
+            cherrypy.log.error('Configured database access string.', 'ENGINE')
 
         elif key == 'create':
             if value is True:
                 Base.metadata.create_all(Session.get_bind())
-                cherrypy.engine.log('Created database tables.')
+                cherrypy.log.error('Created database tables.', 'ENGINE')
 
         else:
-            cherrypy.engine.log(
-                'Configuration directive not implemented: {0}'.format(key))
+            cherrypy.log.error('Configuration directive not implemented: {0}'
+                               .format(key), 'ENGINE')
 Session = Session()

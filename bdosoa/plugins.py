@@ -329,7 +329,7 @@ class BDOSOAPlugin(cherrypy.process.plugins.SimplePlugin):
         self.logger('Query string: {0}'.format(query_string), msg_obj)
 
         if query_string.startswith('"') and query_string.endswith('"'):
-            query_string = query_string.lstrip('" ').rstrip('" ')
+            query_string = query_string.lstrip('" ').rstrip(' "')
 
         query_result = [
             libspg.SubscriptionVersionData(
