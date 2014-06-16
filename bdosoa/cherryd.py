@@ -1,16 +1,14 @@
 #! /usr/bin/env python
 """The CherryPy daemon."""
-import cherrypy
-import sys
-
-from cherrypy.process import plugins, servers
-from optparse import OptionParser
 
 
-def start(cgi=False, configfiles=None, daemonize=False, debug=False,
+def start(cgi=False, config=None, daemon=False, debug=False,
           environment=None, fastcgi=False, gid=None, imports=None,
-          pidfile=None, quiet=False, scgi=False, uid=None):
+          path=None, pidfile=None, quiet=False, scgi=False, uid=None):
     """Subscribe all engine plugins and start the engine."""
+    import cherrypy
+    import sys
+    from cherrypy.process import plugins, servers
 
     # Set logging level
     if debug and quiet:
@@ -24,12 +22,16 @@ def start(cgi=False, configfiles=None, daemonize=False, debug=False,
     elif quiet:
         cherrypy.log.error_log.setLevel(30)
 
+    # Insert paths to the search path
+    for p in path or []:
+        sys.path.insert(0, p)
+
     # Import requested modules
     for i in imports or []:
         exec('import %s' % i)
 
     # Merge configuration files
-    for c in configfiles or []:
+    for c in config or []:
         cherrypy.config.update(c)
 
         # If there's only one app mounted, merge config into it.
@@ -43,7 +45,7 @@ def start(cgi=False, configfiles=None, daemonize=False, debug=False,
         cherrypy.config.update({'environment': environment})
 
     # Only daemonize if asked to.
-    if daemonize:
+    if daemon:
         # Don't print anything to stdout/sterr.
         cherrypy.config.update({'log.screen': False})
         plugins.Daemonizer(cherrypy.engine).subscribe()
@@ -115,55 +117,38 @@ def start(cgi=False, configfiles=None, daemonize=False, debug=False,
 
 
 def main():
+    from optparse import OptionParser
+
     p = OptionParser()
-    p.add_option('-c', '--config', action='append', dest='configs',
+    p.add_option('-c', '--config', action='append',
                  help='specify config file(s)')
-    p.add_option('-d', '--daemon', action='store_true', dest='daemonize',
-                 help='run the server as a daemon', default=False)
-    p.add_option('-D', '--debug', action='store_true', dest='debug',
-                 help='enable debug messages', default=False)
-    p.add_option('-e', '--environment', dest='environment',
+    p.add_option('-d', '--daemon', action='store_true', default=False,
+                 help='run the server as a daemon')
+    p.add_option('-D', '--debug', action='store_true', default=False,
+                 help='enable debug messages')
+    p.add_option('-e', '--environment',
                  help='apply the given config environment')
-    p.add_option('-f', '--fastcgi', action="store_true", dest='fastcgi',
-                 help="start a fastcgi server instead of the default HTTP "
-                      "server", default=False)
-    p.add_option('-g', '--gid', dest='gid',
+    p.add_option('-f', '--fastcgi', action="store_true", default=False,
+                 help='start a fastcgi server')
+    p.add_option('-g', '--gid',
                  help='setgid to the specified group/gid')
     p.add_option('-i', '--import', action='append', dest='imports',
                  help='specify module(s) to import')
-    p.add_option('-p', '--pidfile', dest='pidfile',
+    p.add_option('-p', '--pidfile',
                  help='store the process id in the given file')
-    p.add_option('-P', '--path', action='append', dest='paths',
+    p.add_option('-P', '--path', action='append',
                  help='add the given path(s) to sys.path')
-    p.add_option('-q', '--quiet', action='store_true', dest='quiet',
+    p.add_option('-q', '--quiet', action='store_true', default=False,
                  help='only log warnings and errors')
-    p.add_option('-s', '--scgi', action="store_true", dest='scgi',
-                 help="start a scgi server instead of the default HTTP server",
-                 default=False)
-    p.add_option('-u', '--uid', dest='uid',
+    p.add_option('-s', '--scgi', action="store_true", default=False,
+                 help='start a scgi server')
+    p.add_option('-u', '--uid',
                  help='setuid to the specified user/uid')
-    p.add_option('-x', '--cgi', action="store_true", dest='cgi',
-                 help="start a cgi server instead of the default HTTP server",
-                 default=False)
+    p.add_option('-x', '--cgi', action="store_true", default=False,
+                 help='start a cgi server')
     options, args = p.parse_args()
 
-    for path in options.paths or []:
-        sys.path.insert(0, path)
-
-    start(
-        cgi=options.cgi,
-        configfiles=options.configs,
-        daemonize=options.daemonize,
-        debug=options.debug,
-        environment=options.environment,
-        fastcgi=options.fastcgi,
-        gid=options.gid,
-        imports=options.imports,
-        pidfile=options.pidfile,
-        quiet=options.quiet,
-        scgi=options.scgi,
-        uid=options.uid,
-    )
+    start(**vars(options))
 
 
 if __name__ == '__main__':
