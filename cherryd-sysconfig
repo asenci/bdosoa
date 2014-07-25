@@ -1,0 +1,2 @@
+CHERRYD=/opt/bdosoa/cherryd.py
+OPTIONS="--config /etc/bdosoa.ini --path /opt/bdosoa --uid bdosoa --gid bdosoa --debug"

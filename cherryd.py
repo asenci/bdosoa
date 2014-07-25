@@ -2,6 +2,7 @@
 """The CherryPy daemon."""
 
 
+# noinspection PyDocstring
 def start(cgi=False, config=None, daemon=False, debug=False,
           environment=None, fastcgi=False, gid=None, imports=None,
           path=None, pidfile=None, quiet=False, scgi=False, uid=None):
@@ -116,7 +117,8 @@ def start(cgi=False, config=None, daemon=False, debug=False,
         cherrypy.engine.block()
 
 
-def main():
+# noinspection PyDocstring
+def main(args=None):
     from optparse import OptionParser
 
     p = OptionParser()
@@ -146,7 +148,7 @@ def main():
                  help='setuid to the specified user/uid')
     p.add_option('-x', '--cgi', action="store_true", default=False,
                  help='start a cgi server')
-    options, args = p.parse_args()
+    options, args = p.parse_args(args)
 
     start(**vars(options))
 
