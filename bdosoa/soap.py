@@ -38,7 +38,7 @@ class ElementBase(etree.ElementBase):
 
         # Avoid unicode strings with encoding declaration
         if isinstance(string, unicode):
-            string = string.encode()
+            string = string.encode('uft8')
 
         # Parse the XML string
         return etree.fromstring(string, parser=XMLParser)
