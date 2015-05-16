@@ -1,27 +1,20 @@
-#! /usr/bin/env python
-"""The CherryPy daemon."""
+"""
+CherryPy daemon
+"""
+
+import cherrypy
+import sys
+
+from cherrypy.process import plugins, servers
+from logging import getLogger
+from optparse import OptionParser
 
 
 # noinspection PyDocstring
 def start(cgi=False, config=None, daemon=False, debug=False,
-          environment=None, fastcgi=False, gid=None, imports=None,
+          environment=None, fastcgi=False, gid=None, imports=None, logs=None,
           path=None, pidfile=None, quiet=False, scgi=False, uid=None):
     """Subscribe all engine plugins and start the engine."""
-    import cherrypy
-    import sys
-    from cherrypy.process import plugins, servers
-
-    # Set logging level
-    if debug and quiet:
-        cherrypy.log.error(
-            'You may only specify one of the debug, quiet options', 'ENGINE',
-            severity=50)
-        sys.exit(1)
-
-    if debug:
-        cherrypy.log.error_log.setLevel(10)
-    elif quiet:
-        cherrypy.log.error_log.setLevel(30)
 
     # Insert paths to the search path
     for p in path or []:
@@ -30,6 +23,18 @@ def start(cgi=False, config=None, daemon=False, debug=False,
     # Import requested modules
     for i in imports or []:
         exec('import %s' % i)
+
+    # SQLAlchemy plugin
+    from bdosoa.cherrypy.plugin import SQLAlchemyPlugin
+    SQLAlchemyPlugin(cherrypy.engine).subscribe()
+
+    # SQLAlchemy tool
+    from bdosoa.cherrypy.tool import SQLAlchemyTool
+    cherrypy.tools.sqlalchemy = SQLAlchemyTool()
+
+    # Root App
+    from bdosoa.app import App
+    root_app = cherrypy.tree.mount(App)
 
     # Merge configuration files
     for c in config or []:
@@ -40,6 +45,10 @@ def start(cgi=False, config=None, daemon=False, debug=False,
             for app in cherrypy.tree.apps.values():
                 if isinstance(app, cherrypy.Application):
                     app.merge(c)
+
+        # Else merge to the root app
+        else:
+            root_app.merge(c)
 
     # Set CherryPy environment
     if environment is not None:
@@ -107,6 +116,36 @@ def start(cgi=False, config=None, daemon=False, debug=False,
             cherrypy.engine, httpserver, cherrypy.server.bind_addr)
         cherrypy.server.subscribe()
 
+    # Set logging level
+    if debug and quiet:
+        cherrypy.log.error(
+            'You may only specify one of the debug, quiet options',
+            'ENGINE',
+            severity=50)
+        sys.exit(1)
+
+    if debug:
+        cherrypy.log.error_log.setLevel(10)
+    elif quiet:
+        cherrypy.log.error_log.setLevel(30)
+
+    # Setup logging for other modules
+    for name in logs or []:
+
+        # Get CherryPy builtin handlers
+        cherrypy_log_handlers = [
+            cherrypy.log._get_builtin_handler(cherrypy.log.error_log, h)
+            for h in ['screen', 'file', 'wsgi']
+        ]
+
+        # Create logger for the module
+        logger = getLogger(name)
+        logger.setLevel(cherrypy.log.error_log.getEffectiveLevel())
+
+        for handler in cherrypy_log_handlers:
+            if handler is not None:
+                logger.addHandler(handler)
+
     # Always start the engine; this will start all other services
     try:
         cherrypy.engine.start()
@@ -119,8 +158,6 @@ def start(cgi=False, config=None, daemon=False, debug=False,
 
 # noinspection PyDocstring
 def main(args=None):
-    from optparse import OptionParser
-
     p = OptionParser()
     p.add_option('-c', '--config', action='append',
                  help='specify config file(s)')
@@ -136,6 +173,8 @@ def main(args=None):
                  help='setgid to the specified group/gid')
     p.add_option('-i', '--import', action='append', dest='imports',
                  help='specify module(s) to import')
+    p.add_option('-l', '--log', action='append', dest='logs',
+                 help='attach module to CherryPy log handler')
     p.add_option('-p', '--pidfile',
                  help='store the process id in the given file')
     p.add_option('-P', '--path', action='append',

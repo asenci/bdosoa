@@ -1,0 +1,4 @@
+"""
+bdosoa - auxiliary functions
+"""
+

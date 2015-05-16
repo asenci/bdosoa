@@ -1,0 +1,8 @@
+#PYTHON=/usr/bin/python
+#PYTHONPATH=/opt/bdosoa
+#MODULE=/opt/bdosoa/bdosoa/cherrypy/daemon.py
+#USR=bdosoa
+#GRP=bdosoa
+#CONFIGFILE=/etc/bdosoa.ini
+
+OPTIONS="--debug --log bdosoa"
