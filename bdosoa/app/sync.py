@@ -14,16 +14,18 @@ class Sync(object):
     """Process Sync requests"""
 
     @cherrypy.expose
-    def index(self, spid, token, task_id=None):
+    def index(self, spid, token, task=None):
         """Receive Sync or Subscription Version requests
 
         :param str spid: Service Provider ID
         :param str token: access token
-        :param str task_id: Sync Task ID
+        :param str task: Sync Task ID
         """
 
         # Get handler based on request method
         handler = getattr(self, cherrypy.request.method.upper(), None)
+        cherrypy.log.error('Got handler: {0!r}'
+                           .format(handler), 'SYNC', 10)
 
         # Return allowed methods if handler not found
         if handler is None:
@@ -40,61 +42,63 @@ class Sync(object):
         except NoResultFound:
             raise cherrypy.HTTPError(403)
 
-        # Check if a task exists for the specified task_id
-        if task_id:
-            try:
-                task = cherrypy.request.sync_client.tasks.filter_by(
-                    id=task_id).one()
+        # Get tasks
+        if task:
+            if isinstance(task, (str, unicode)):
+                task = [task]
 
-            except NoResultFound:
+            tasks = cherrypy.request.sync_client.tasks.filter(
+                SyncTask.id.in_(task))
+
+            if tasks.count() < len(task):
                 raise cherrypy.HTTPError(404)
 
         else:
-            task = None
+            tasks = []
 
         # Process request
         cherrypy.response.headers['Content-Type'] = 'application/json'
-        return handler(task)
+        return handler(tasks)
 
-    def GET(self, task=None):
+    def GET(self, tasks=None):
         """Get Sync Tasks
 
-        :param SyncTask task: optional task to query
+        :param list tasks: optional task to query
         """
 
-        if task:
-            sv = cherrypy.request.db.query(SubscriptionVersion).get(
-                task.subscriptionversion_id)
-            return json.dumps(dict((k, v) for (k, v) in sv.__dict__.items()
-                                   if not k.startswith('_')),
-                              default=lambda o: str(o))
+        if tasks:
+            cherrypy.log.error('Processing tasks: {0}'
+                               .format([t.id for t in tasks]), 'SYNC', 10)
+            result = [
+                dict((k, v) for (k, v) in s.__dict__.items()
+                     if not k.startswith('_'))
+                for s in cherrypy.request.db.query(SubscriptionVersion).filter(
+                    SubscriptionVersion.id.in_([t.subscriptionversion_id
+                                                for t in tasks])
+                )
+            ]
+            cherrypy.log.error('Sending subscription version list: {0}'.format(
+                [s['subscription_version_id'] for s in result]), 'SYNC', 10)
 
-        result = []
-
-        for task in cherrypy.request.sync_client.tasks.limit(1000):
-            sv = cherrypy.request.db.query(SubscriptionVersion).get(
-                task.subscriptionversion_id)
-
-            sv_dict = dict(
-                (k, v) for (k, v) in sv.__dict__.items()
-                if not k.startswith('_')
-            )
-
-            result.append({
-                'task_id': task.id,
-                'subscription_version': sv_dict,
-            })
+        else:
+            result = [
+                t.id for t in cherrypy.request.sync_client.tasks.limit(10000)
+            ]
+            cherrypy.log.error('Sending task list: {0}'
+                               .format(result), 'SYNC', 10)
 
         return json.dumps(result, default=lambda o: str(o))
 
-    def DELETE(self, task=None):
+    def DELETE(self, tasks):
         """Delete Sync Tasks
 
-        :param SyncTask task: task to delete
+        :param SyncTask tasks: task to delete
         """
 
-        if task is None:
+        if not tasks:
             raise cherrypy.HTTPError(404)
 
         # Delete task
-        cherrypy.request.db.delete(task)
+        cherrypy.log.error('Deleting tasks: {0}'
+                           .format([t.id for t in tasks]), 'SYNC', 10)
+        tasks.delete(False)
