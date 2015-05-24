@@ -337,9 +337,8 @@ class SOAP(object):
             raise ValueError('A query expression must be specified')
 
         # Get the subscription versions
-        svs = cherrypy.request.db.query(SubscriptionVersion).filter(
-            SubscriptionVersion.spid == spid,
-            SubscriptionVersion.subscription_deletion_timestamp.isnot(None)
+        svs = cherrypy.request.db.query(SubscriptionVersion).filter_by(
+            spid=spid, subscription_deletion_timestamp=None,
         ).filter(query_string).all()
 
         # Build the query response
@@ -352,15 +351,12 @@ class SOAP(object):
                 libspg.SubscriptionData(
                     subscription_recipient_sp=sv.subscription_recipient_sp,
                     subscription_recipient_eot=sv.subscription_recipient_eot,
-                    subscription_activation_timestamp=
-                    sv.subscription_activation_timestamp,
-                    broadcast_window_start_timestamp=
-                    sv.subscription_broadcast_timestamp,
+                    subscription_activation_timestamp=sv.subscription_activation_timestamp,
+                    broadcast_window_start_timestamp=sv.subscription_broadcast_timestamp,
                     subscription_rn1=sv.subscription_rn1,
                     subscription_new_cnl=sv.subscription_new_cnl,
                     subscription_lnp_type=sv.subscription_lnp_type,
-                    subscription_download_reason=
-                    sv.subscription_download_reason,
+                    subscription_download_reason=sv.subscription_download_reason,
                     subscription_line_type=sv.subscription_line_type,
                     subscription_optional_data=sv.subscription_optional_data,
                 )
