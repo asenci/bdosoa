@@ -14,7 +14,7 @@ from traceback import format_exception
 from subprocess import Popen, PIPE
 
 from bdosoa.lib.soap import SOAPApplication, SOAPClient
-from bdosoa.model import ServiceProvider, SubscriptionVersion, SyncTask
+from bdosoa.model import ServiceProviderGateway, SubscriptionVersion, SyncTask
 from bdosoa.model.meta import NoResultFound
 
 
@@ -73,16 +73,17 @@ class SOAP(object):
 
         # Check access credentials
         try:
-            cherrypy.request.service_provider = \
-                cherrypy.request.db.query(ServiceProvider).filter_by(
-                    spid=spid, token=token, enabled=True).one()
+            cherrypy.request.service_provider_gateway = \
+                cherrypy.request.db.query(ServiceProviderGateway).filter_by(
+                    service_provider_id=spid, token=token, enabled=True
+                ).one()
 
         except NoResultFound:
             raise cherrypy.HTTPError(403)
 
         # Process request
-        status_code, response = self.soap_app.process_request(
-            cherrypy.request.body.read())
+        status_code, response = \
+            self.soap_app.process_request(cherrypy.request.body.read())
 
         # Return response
         cherrypy.response.status = status_code
@@ -98,14 +99,14 @@ class SOAP(object):
         :rtype: str
         """
 
-        sp = cherrypy.request.service_provider
+        spg = cherrypy.request.service_provider_gateway
         msg_obj = libspg.Message.from_string(xmlMessage)
 
         # Check the service provider id on the SPG message
-        if msg_obj.service_prov_id != sp.spid:
+        if msg_obj.service_prov_id != spg.service_provider_id:
             raise ValueError(
                 'Message SPID ({0}) does not match request SPID ({1})'
-                .format(msg_obj.service_prov_id, sp.spid))
+                .format(msg_obj.service_prov_id, spg.service_provider_id))
 
         # Check SPG message type
         if not isinstance(msg_obj, BDRtoBDO):
@@ -191,16 +192,13 @@ class SOAP(object):
         :param libspg.Message msg_obj: Message object
         """
 
+        spg = cherrypy.request.service_provider_gateway
+
         self.logger('Sending message.', msg_obj)
-
-        # Get the message service provider
-        sp = cherrypy.request.db.query(ServiceProvider).filter_by(
-            spid=msg_obj.service_prov_id, enabled=True).one()
-
         self.logger('Sending message to: {0}'
-                    .format(sp.spg_url), msg_obj, severity=10)
+                    .format(spg.soap_url), msg_obj, severity=10)
 
-        soap_client = SOAPClient(sp.spg_url, 'SPG/SoapServer')
+        soap_client = SOAPClient(spg.soap_url, 'SPG/SoapServer')
 
         header = '{0}|{1}|{2:%s}'.format(
             msg_obj.service_prov_id,
@@ -223,15 +221,14 @@ class SOAP(object):
 
         :param SVCreateDownload msg_obj: SVCreateDownload message
         """
-        sp = cherrypy.request.service_provider
+        spg = cherrypy.request.service_provider_gateway
         tn_version_id = msg_obj.message_content.subscription_tn_version_id
         data = msg_obj.message_content.subscription_data
 
         # Get the subscription version
         try:
-            sv = cherrypy.request.db.query(SubscriptionVersion).filter_by(
-                spid=msg_obj.service_prov_id,
-                subscription_version_id=tn_version_id.version_id
+            sv = spg.subscription_versions.filter_by(
+                subscription_version_id=tn_version_id.version_id,
             ).one()
 
             self.logger('Updating subscription version: {0}'.format(
@@ -240,8 +237,9 @@ class SOAP(object):
         # Create a new subscription version if it does not already exist
         except NoResultFound:
             sv = SubscriptionVersion(
-                spid=msg_obj.service_prov_id,
-                subscription_version_id=tn_version_id.version_id)
+                service_provider_gateway_id=spg.id,
+                subscription_version_id=tn_version_id.version_id,
+            )
             cherrypy.request.db.add(sv)
             cherrypy.request.db.flush()
 
@@ -269,9 +267,9 @@ class SOAP(object):
             sv.subscription_download_reason = data.subscription_download_reason
 
         # Create the sync tasks
-        for client in sp.sync_clients.filter_by(enabled=True):
-            task = SyncTask(syncclient_id=client.id,
-                            subscriptionversion_id=sv.id)
+        for client in spg.sync_clients.filter_by(enabled=True):
+            task = SyncTask(sync_client_id=client.id,
+                            subscription_version_id=sv.id)
             cherrypy.request.db.add(task)
             cherrypy.request.db.flush()
 
@@ -285,14 +283,13 @@ class SOAP(object):
         :param SVDeleteDownload msg_obj: SVDeleteDownload message
         """
 
-        sp = cherrypy.request.service_provider
+        spg = cherrypy.request.service_provider_gateway
         version_id = msg_obj.message_content.subscription_version_id
         data = msg_obj.message_content.subscription_delete_data
 
         # Get the subscription version
         try:
-            sv = cherrypy.request.db.query(SubscriptionVersion).filter_by(
-                spid=msg_obj.service_prov_id,
+            sv = spg.subscription_versions.filter_by(
                 subscription_version_id=version_id,
             ).one()
 
@@ -305,16 +302,15 @@ class SOAP(object):
             # Update the subscription version attributes
             sv.subscription_download_reason = data.subscription_download_reason
             sv.subscription_deletion_timestamp = \
-                data.broadcast_window_start_timestamp or \
-                datetime.utcnow()
+                data.broadcast_window_start_timestamp or datetime.utcnow()
 
             self.logger('Removed subscription version: {0}'
                         .format(version_id), msg_obj)
 
             # Create the sync tasks
-            for client in sp.sync_clients.filter_by(enabled=True):
-                task = SyncTask(syncclient_id=client.id,
-                                subscriptionversion_id=sv.id)
+            for client in spg.sync_clients.filter_by(enabled=True):
+                task = SyncTask(sync_client_id=client.id,
+                                subscription_version_id=sv.id)
                 cherrypy.request.db.add(task)
                 cherrypy.request.db.flush()
 
@@ -328,7 +324,7 @@ class SOAP(object):
         :param QueryBdoSVs msg_obj: QueryBdoSVs message
         """
 
-        spid = msg_obj.service_prov_id
+        spg = cherrypy.request.service_provider_gateway
         query_string = msg_obj.message_content.query_expression
 
         self.logger('Query string: {0}'.format(query_string), msg_obj)
@@ -340,8 +336,8 @@ class SOAP(object):
             raise ValueError('A query expression must be specified')
 
         # Get the subscription versions
-        svs = cherrypy.request.db.query(SubscriptionVersion).filter_by(
-            spid=spid, subscription_deletion_timestamp=None,
+        svs = spg.subscription_versions.filter_by(
+            subscription_deletion_timestamp=None,
         ).filter(query_string).all()
 
         # Build the query response

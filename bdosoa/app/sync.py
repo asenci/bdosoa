@@ -5,7 +5,8 @@ bdosoa - Subscription Versions syncing
 import cherrypy
 import json
 
-from bdosoa.model import SubscriptionVersion, SyncClient, SyncTask
+from bdosoa.model import (ServiceProviderGateway, SubscriptionVersion,
+                          SyncClient, SyncTask)
 from bdosoa.model.meta import NoResultFound
 
 
@@ -35,9 +36,14 @@ class Sync(object):
 
         # Check access credentials
         try:
-            cherrypy.request.sync_client = \
-                cherrypy.request.db.query(SyncClient).filter_by(
-                    spid=spid, token=token, enabled=True).one()
+            cherrypy.request.sync_client = cherrypy.request.db \
+                .query(SyncClient) \
+                .join(ServiceProviderGateway) \
+                .filter(
+                    ServiceProviderGateway.service_provider_id == spid,
+                    SyncClient.token == token,
+                    SyncClient.enabled,
+                ).one()
 
         except NoResultFound:
             raise cherrypy.HTTPError(403)
@@ -73,7 +79,7 @@ class Sync(object):
                 dict((k, v) for (k, v) in s.__dict__.items()
                      if not k.startswith('_'))
                 for s in cherrypy.request.db.query(SubscriptionVersion).filter(
-                    SubscriptionVersion.id.in_([t.subscriptionversion_id
+                    SubscriptionVersion.id.in_([t.subscription_version_id
                                                 for t in tasks])
                 )
             ]
@@ -101,4 +107,4 @@ class Sync(object):
         # Delete task
         cherrypy.log.error('Deleting tasks: {0}'
                            .format([t.id for t in tasks]), 'SYNC', 10)
-        tasks.delete(False)
+        tasks.delete(synchronize_session=False)
