@@ -11,7 +11,7 @@ import sqlalchemy.orm
 class Base(object):
     """Base ORM model"""
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True,
+    id = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True,
                            nullable=False, autoincrement=True)
 
 Base = sqlalchemy.ext.declarative.declarative_base(cls=Base)
