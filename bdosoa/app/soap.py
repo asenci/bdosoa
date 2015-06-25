@@ -131,6 +131,9 @@ class SOAP(object):
             p.stdin.close()
             p.wait()
 
+            # Rollback database session
+            cherrypy.request.db.rollback()
+
             return '-1'
 
         return '0'
