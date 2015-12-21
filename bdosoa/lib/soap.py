@@ -38,7 +38,7 @@ class ElementBase(etree.ElementBase):
 
         # Avoid unicode strings with encoding declaration
         if isinstance(string, unicode):
-            string = string.encode('uft8')
+            string = string.encode('utf-8')
 
         # Parse the XML string
         return etree.fromstring(string, parser=XMLParser)
@@ -204,19 +204,13 @@ class SOAPApplication(object):
                       E(method_call.tag + 'Result', result))
                 )
 
-            response_code = 200
-
-        except Exception as e:
-            self.logger.exception('Error processing the request')
-
+        except:
             soap_response = S.Envelope(S.Body(
                 S.Fault(
-                    E.faultcode(':'.join([SOAP_ENV_NS, 'Client'])),
-                    E.faultstring(str(e))
+                    E.faultcode(':'.join([SOAP_ENV_NS, 'Server'])),
+                    E.faultstring('Error processing the request')
                 )
             ))
-
-            response_code = 500
 
         # Serialize the response
         response_body = str(soap_response)

@@ -1,0 +1,3 @@
+"""
+bdosoa - console scripts
+"""

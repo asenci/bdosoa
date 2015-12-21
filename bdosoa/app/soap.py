@@ -51,7 +51,7 @@ class SOAP(object):
                     msg_obj.__class__.__name__)
 
             except:
-                cherrypy.log.error('Error formatting log message. ', 'ENGINE',
+                cherrypy.log.error('Error formatting log message.', 'ENGINE',
                                    severity=40, traceback=True)
 
         cherrypy.log.error(msg=msg, context=context, severity=severity,
@@ -118,14 +118,14 @@ class SOAP(object):
 
         # Log and mail the exception if the processing fails
         except:
-            self.logger('Error processing message. ', msg_obj, severity=40,
+            self.logger('Error processing message.', msg_obj, severity=40,
                         traceback=True)
 
             mail = MIMEText(''.join(format_exception(*sys.exc_info())))
             mail['To'] = 'root'
-            mail['Subject'] = \
-                'BDOSOA - Error processing message {0} for SPID {1}' \
-                .format(msg_obj.invoke_id, msg_obj.service_prov_id)
+            mail['Subject'] = 'BDOSOA - Error processing message {0} for ' \
+                              'Service Provider "{1}"' \
+                .format(msg_obj.invoke_id, spg.description)
 
             p = Popen(['/usr/sbin/sendmail', '-t'], stdin=PIPE)
             p.communicate(mail.as_string())
@@ -162,7 +162,7 @@ class SOAP(object):
         :param libspg.Message msg_obj: Message object
         """
 
-        self.logger('Received message.', msg_obj)
+        self.logger('Received message.', msg_obj, severity=10)
 
         # Get message handler
         handler = self.__msg_handlers__.get(type(msg_obj))
@@ -171,8 +171,7 @@ class SOAP(object):
             raise NotImplementedError('No handler for message: {0!r}'
                                       .format(msg_obj))
 
-        self.logger('Handler: {0!r}'.format(handler), msg_obj,
-                    severity=10)
+        self.logger('Handler: {0!r}'.format(handler), msg_obj, severity=10)
 
         # Process message
         reply = handler(msg_obj)
@@ -273,7 +272,8 @@ class SOAP(object):
             cherrypy.request.db.add(task)
             cherrypy.request.db.flush()
 
-            self.logger('Added sync task: {0}'.format(task.id), msg_obj)
+            self.logger('Added sync task: {0}'
+                        .format(task.id), msg_obj, severity=10)
 
         return msg_obj.reply()
 
@@ -293,28 +293,33 @@ class SOAP(object):
                 subscription_version_id=version_id,
             ).one()
 
-        # Subscription version not found, no processing needed
+        # Subscription version not created yet, create a new deleted
+        # subscription version to ensure asynchronous processing
         except NoResultFound:
-            self.logger('Subscription version not found: {0}'
-                        .format(version_id), msg_obj)
+            sv = SubscriptionVersion(
+                service_provider_gateway_id=spg.id,
+                subscription_version_id=version_id,
+            )
+            cherrypy.request.db.add(sv)
+            cherrypy.request.db.flush()
 
-        else:
-            # Update the subscription version attributes
-            sv.subscription_download_reason = data.subscription_download_reason
-            sv.subscription_deletion_timestamp = \
-                data.broadcast_window_start_timestamp or datetime.utcnow()
+        # Update the subscription version attributes
+        sv.subscription_download_reason = data.subscription_download_reason
+        sv.subscription_deletion_timestamp = \
+            data.broadcast_window_start_timestamp or datetime.utcnow()
 
-            self.logger('Removed subscription version: {0}'
-                        .format(version_id), msg_obj)
+        self.logger('Removed subscription version: {0}'
+                    .format(version_id), msg_obj)
 
-            # Create the sync tasks
-            for client in spg.sync_clients.filter_by(enabled=True):
-                task = SyncTask(sync_client_id=client.id,
-                                subscription_version_id=sv.id)
-                cherrypy.request.db.add(task)
-                cherrypy.request.db.flush()
+        # Create the sync tasks
+        for client in spg.sync_clients.filter_by(enabled=True):
+            task = SyncTask(sync_client_id=client.id,
+                            subscription_version_id=sv.id)
+            cherrypy.request.db.add(task)
+            cherrypy.request.db.flush()
 
-                self.logger('Added sync task: {0}'.format(task.id), msg_obj)
+            self.logger('Added sync task: {0}'
+                        .format(task.id), msg_obj, severity=10)
 
         return msg_obj.reply()
 
@@ -366,7 +371,7 @@ class SOAP(object):
 
         self.logger('Query result: {0}'
                     .format([sv.subscription_tn_version_id.version_id
-                             for sv in query_result]), msg_obj)
+                             for sv in query_result]), msg_obj, severity=10)
 
         # Send the query result
         return msg_obj.reply(query_result)
